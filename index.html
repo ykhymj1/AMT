@@ -67,6 +67,8 @@
   --amt-bg: #eff6ff;
   --ky: #d97706;
   --ky-bg: #fffbeb;
+  --best: #059669;
+  --best-bg: #ecfdf5;
   --internal: #7c3aed;
   --internal-bg: #f5f3ff;
 
@@ -435,6 +437,15 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
 .company-badge-amt{background:var(--amt-bg);color:var(--amt);padding:2px 8px;border-radius:20px;font-size:.68rem;font-weight:700;}
 .company-badge-ky{background:var(--ky-bg);color:var(--ky);padding:2px 8px;border-radius:20px;font-size:.68rem;font-weight:700;}
 .internal-card{border-left:4px solid var(--internal);background:linear-gradient(135deg,var(--internal-bg),#fff);}
+  --best: #059669;
+  --best-bg: #ecfdf5;
+.company-badge-best{background:var(--best-bg);color:var(--best);padding:2px 8px;border-radius:20px;font-size:.68rem;font-weight:700;}
+.tx-in{color:#059669;font-weight:700;}
+.tx-out{color:#dc2626;font-weight:700;}
+.balance-pos{color:#059669;font-weight:700;}
+.balance-neg{color:#dc2626;font-weight:700;}
+.debt-badge{background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:700;}
+.credit-badge{background:#dcfce7;color:#059669;padding:2px 8px;border-radius:20px;font-size:.72rem;font-weight:700;}
 .inv-company-section{margin-bottom:20px;}
 .inv-company-header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius-sm);margin-bottom:10px;font-weight:700;font-size:.85rem;}
 .inv-company-header.amt{background:var(--amt);color:#fff;}
@@ -539,7 +550,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
   <button class="nav-btn" data-page="order" onclick="nav(this)">📦 발주입력</button>
   <button class="nav-btn" data-page="receivable" onclick="nav(this)">💰 수금관리</button>
   <button class="nav-btn" data-page="report" onclick="nav(this)">📈 리포트</button>
-  <button class="nav-btn" data-page="internal" onclick="nav(this)">🔄 내부거래(AMT→KY)</button>
+  <button class="nav-btn" data-page="internal" onclick="nav(this)">🏦 채권채무관리</button>
   <button class="nav-btn" data-page="inventory" onclick="nav(this)">🗃️ 재고</button>
   <button class="nav-btn" data-page="dealers" onclick="nav(this)">🏢 대리점관리</button>
   <button class="nav-btn" data-page="settings" onclick="nav(this)">⚙️ 설정</button>
@@ -673,80 +684,231 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
   </div>
 </div>
 
-<!-- ═══════════ 내부거래 (AMT → KY) ═══════════ -->
+<!-- ═══════════ 채권채무관리 ═══════════ -->
 <div class="page" id="page-internal">
-  <div class="card internal-card">
-    <div class="card-header">
-      <div class="card-title">
-        <div class="card-title-dot" style="background:var(--internal)"></div>
-        AMT → KY 내부거래 입력
-        <span style="font-size:.72rem;color:var(--text3);font-weight:400;margin-left:6px">(AMT 출고 → KY 입고 자동처리)</span>
+
+  <!-- 잔액 요약 카드 -->
+  <div id="debtSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px"></div>
+
+  <!-- 탭 -->
+  <div class="tab-bar">
+    <button class="tab-btn active" onclick="txTab('tx',this)">📒 거래내역</button>
+    <button class="tab-btn" onclick="txTab('best',this)">📦 BEST 반품</button>
+    <button class="tab-btn" onclick="txTab('adjust',this)">⚖️ 채무조정</button>
+    <button class="tab-btn" onclick="txTab('history',this)">📋 이력(AMT→KY)</button>
+  </div>
+
+  <!-- 거래내역 탭 -->
+  <div class="tab-pane active" id="tx-tab-tx">
+    <div class="card" style="margin-top:12px">
+      <div class="card-header">
+        <div class="card-title"><div class="card-title-dot" style="background:var(--internal)"></div>거래 입력</div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>날짜 <span class="req">*</span></label>
+          <input type="date" id="txDate">
+        </div>
+        <div class="form-group">
+          <label>거래 유형 <span class="req">*</span></label>
+          <select id="txType" onchange="txTypeChange()">
+            <option value="">-- 선택 --</option>
+            <option value="AMT_to_KY">AMT → KY (물품공급)</option>
+            <option value="KY_to_AMT">KY → AMT (대금지급/선수금)</option>
+            <option value="AMT_to_BEST">AMT → BEST (물품공급)</option>
+            <option value="BEST_to_AMT">BEST → AMT (대금지급/선수금)</option>
+            <option value="KY_to_BEST">KY → BEST (물품공급)</option>
+            <option value="BEST_to_KY">BEST → KY (대금지급/선수금)</option>
+            <option value="AMT_loan_KY">AMT → KY (무이자대출)</option>
+            <option value="KY_loan_AMT">KY → AMT (무이자대출)</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>금액 <span class="req">*</span></label>
+          <input type="text" inputmode="numeric" id="txAmt" placeholder="0" oninput="fmtInput(this)">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1">
+          <label>메모</label>
+          <input type="text" id="txMemo" placeholder="선택사항">
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:4px">
+        <button class="btn btn-primary" style="background:var(--internal);border-color:var(--internal)" onclick="saveTx()">💾 저장</button>
+        <span id="txMsg" style="font-size:.8rem;color:var(--green);font-weight:500"></span>
       </div>
     </div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>거래일 <span class="req">*</span></label>
-        <input type="date" id="itDate">
+
+    <!-- 거래 목록 -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-header">
+        <div class="card-title"><div class="card-title-dot" style="background:var(--internal)"></div>거래 목록</div>
       </div>
-      <div class="form-group">
-        <label>제품 <span class="req">*</span></label>
-        <select id="itProduct" onchange="itOnProduct()">
-          <option value="">-- 제품 선택 --</option>
-        </select>
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label>월</label>
+          <input type="month" id="txFilterM" onchange="renderTxList()">
+        </div>
+        <div class="filter-group">
+          <label>회사</label>
+          <select id="txFilterC" onchange="renderTxList()">
+            <option value="">전체</option>
+            <option value="AMT">AMT</option>
+            <option value="KY">KY</option>
+            <option value="BEST">BEST</option>
+          </select>
+        </div>
       </div>
-      <div class="form-group">
-        <label>수량 <span class="req">*</span></label>
-        <input type="text" inputmode="numeric" id="itQty" placeholder="0" oninput="fmtInput(this);itCalcTotal()">
-      </div>
-    </div>
-    <div class="form-grid">
-      <div class="form-group">
-        <label>단가 (수정가능) <span class="req">*</span></label>
-        <input type="text" inputmode="numeric" id="itPrice" placeholder="0" oninput="fmtInput(this);itCalcTotal()">
-      </div>
-      <div class="form-group">
-        <label>합계금액</label>
-        <input type="text" id="itTotal" readonly style="font-weight:700;color:var(--internal)">
-      </div>
-      <div class="form-group">
-        <label>메모</label>
-        <input type="text" id="itMemo" placeholder="선택사항">
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--internal-bg);border-radius:var(--radius-sm);margin-bottom:12px;flex-wrap:wrap">
-      <span style="font-size:.78rem;color:var(--internal);font-weight:600">📤 AMT 재고</span>
-      <span id="itAmtStock" style="font-family:'JetBrains Mono',monospace;font-size:.82rem;font-weight:700">-</span>
-      <span style="font-size:.78rem;color:var(--ky);font-weight:600;margin-left:12px">📥 KY 재고</span>
-      <span id="itKyStock" style="font-family:'JetBrains Mono',monospace;font-size:.82rem;font-weight:700">-</span>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px">
-      <button class="btn btn-primary" style="background:var(--internal);border-color:var(--internal)" onclick="saveInternal()">💾 내부거래 저장</button>
-      <span id="itMsg" style="font-size:.8rem;color:var(--green);font-weight:500"></span>
+      <div id="txList"></div>
     </div>
   </div>
 
-  <!-- 내부거래 목록 -->
-  <div class="card" style="margin-top:16px">
-    <div class="card-header">
-      <div class="card-title"><div class="card-title-dot" style="background:var(--internal)"></div>내부거래 이력</div>
-      <div style="display:flex;gap:6px">
+  <!-- BEST 반품 탭 -->
+  <div class="tab-pane" id="tx-tab-best">
+    <div class="card" style="margin-top:12px">
+      <div class="card-header">
+        <div class="card-title"><div class="card-title-dot" style="background:var(--best)"></div>BEST 반품 입력</div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>날짜 <span class="req">*</span></label>
+          <input type="date" id="bestDate">
+        </div>
+        <div class="form-group">
+          <label>반품 출처</label>
+          <select id="bestFrom">
+            <option value="AMT">AMT 반품</option>
+            <option value="KY">KY 반품</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>제품명 <span class="req">*</span></label>
+          <input type="text" id="bestProduct" placeholder="제품명 직접 입력">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>단가 <span class="req">*</span></label>
+          <input type="text" inputmode="numeric" id="bestPrice" placeholder="0" oninput="fmtInput(this);bestCalcTotal()">
+        </div>
+        <div class="form-group">
+          <label>수량 <span class="req">*</span></label>
+          <input type="text" inputmode="numeric" id="bestQty" placeholder="0" oninput="fmtInput(this);bestCalcTotal()">
+        </div>
+        <div class="form-group">
+          <label>총금액 (자동계산)</label>
+          <input type="text" id="bestTotal" readonly style="font-weight:700;color:var(--best)">
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="form-group" style="grid-column:1/-1">
+          <label>메모</label>
+          <input type="text" id="bestMemo" placeholder="선택사항">
+        </div>
+      </div>
+      <button class="btn btn-primary" style="background:var(--best);border-color:var(--best);margin-top:4px" onclick="saveBestReturn()">💾 반품 저장</button>
+    </div>
+    <div class="card" style="margin-top:14px">
+      <div class="card-header">
+        <div class="card-title"><div class="card-title-dot" style="background:var(--best)"></div>BEST 반품 이력</div>
+      </div>
+      <div id="bestReturnList"></div>
+    </div>
+  </div>
+
+  <!-- 채무조정 탭 -->
+  <div class="tab-pane" id="tx-tab-adjust">
+    <div class="card" style="margin-top:12px">
+      <div class="card-header">
+        <div class="card-title"><div class="card-title-dot" style="background:var(--yellow)"></div>채무 조정 (시작잔액 설정)</div>
+      </div>
+      <p style="font-size:.78rem;color:var(--text2);margin-bottom:14px">
+        2026.1.1 이전 거래 잔액을 직접 입력합니다.<br>
+        <b>양수(+)</b> = 해당 회사가 상대방에게 받을 돈(채권) &nbsp;|&nbsp; <b>음수(-)</b> = 줘야할 돈(채무)
+      </p>
+      <div style="display:grid;gap:14px">
+        <div style="background:#f8fafc;border-radius:10px;padding:14px">
+          <div style="font-weight:700;margin-bottom:10px;font-size:.9rem">AMT ↔ KY 조정</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>조정 날짜</label>
+              <input type="date" id="adjDate_AMT_KY" value="2026-01-01">
+            </div>
+            <div class="form-group">
+              <label>AMT 기준 잔액 (AMT가 KY에게 받을 금액)</label>
+              <input type="text" inputmode="numeric" id="adjAmt_AMT_KY" placeholder="예: 5000000 또는 -3000000" oninput="fmtInput(this)">
+            </div>
+            <div class="form-group">
+              <label>메모</label>
+              <input type="text" id="adjMemo_AMT_KY" value="2026.1.1 이전 잔액 조정">
+            </div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="saveDebtAdj('AMT','KY')">⚖️ AMT↔KY 조정 저장</button>
+        </div>
+        <div style="background:#f8fafc;border-radius:10px;padding:14px">
+          <div style="font-weight:700;margin-bottom:10px;font-size:.9rem">AMT ↔ BEST 조정</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>조정 날짜</label>
+              <input type="date" id="adjDate_AMT_BEST" value="2026-01-01">
+            </div>
+            <div class="form-group">
+              <label>AMT 기준 잔액 (AMT가 BEST에게 받을 금액)</label>
+              <input type="text" inputmode="numeric" id="adjAmt_AMT_BEST" placeholder="예: 5000000 또는 -3000000" oninput="fmtInput(this)">
+            </div>
+            <div class="form-group">
+              <label>메모</label>
+              <input type="text" id="adjMemo_AMT_BEST" value="2026.1.1 이전 잔액 조정">
+            </div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="saveDebtAdj('AMT','BEST')">⚖️ AMT↔BEST 조정 저장</button>
+        </div>
+        <div style="background:#f8fafc;border-radius:10px;padding:14px">
+          <div style="font-weight:700;margin-bottom:10px;font-size:.9rem">KY ↔ BEST 조정</div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label>조정 날짜</label>
+              <input type="date" id="adjDate_KY_BEST" value="2026-01-01">
+            </div>
+            <div class="form-group">
+              <label>KY 기준 잔액 (KY가 BEST에게 받을 금액)</label>
+              <input type="text" inputmode="numeric" id="adjAmt_KY_BEST" placeholder="예: 5000000 또는 -3000000" oninput="fmtInput(this)">
+            </div>
+            <div class="form-group">
+              <label>메모</label>
+              <input type="text" id="adjMemo_KY_BEST" value="2026.1.1 이전 잔액 조정">
+            </div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="saveDebtAdj('KY','BEST')">⚖️ KY↔BEST 조정 저장</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 기존 AMT→KY 물품거래 이력 탭 -->
+  <div class="tab-pane" id="tx-tab-history">
+    <div class="card" style="margin-top:12px">
+      <div class="card-header">
+        <div class="card-title"><div class="card-title-dot" style="background:var(--internal)"></div>AMT→KY 물품공급 이력</div>
         <button class="btn btn-ghost btn-sm" onclick="renderInternalList()">🔄 새로고침</button>
       </div>
-    </div>
-    <div class="filter-bar">
-      <div class="filter-group">
-        <label>월</label>
-        <input type="month" id="itFilterM" onchange="renderInternalList()">
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label>월</label>
+          <input type="month" id="itFilterM" onchange="renderInternalList()">
+        </div>
+        <div class="filter-group">
+          <label>제품</label>
+          <select id="itFilterP" onchange="renderInternalList()">
+            <option value="">전체</option>
+          </select>
+        </div>
       </div>
-      <div class="filter-group">
-        <label>제품</label>
-        <select id="itFilterP" onchange="renderInternalList()">
-          <option value="">전체</option>
-        </select>
-      </div>
+      <div id="internalList"></div>
     </div>
-    <div id="internalList"></div>
   </div>
+
 </div>
 
 
@@ -1141,7 +1303,9 @@ let _openDayDetail = null;  // 수금 캘린더 열린 날짜 유지용
 let auditLogs = [];  // 변경/삭제 이력
 let orders  = [];  // 발주/매출
 let invLogs = [];  // 재고이력
-let internalTrades = []; // AMT→KY 내부거래
+let internalTrades = []; // AMT→KY 내부거래 (재고연동 기존유지)
+let txLogs = [];        // 채권채무 거래내역 (AMT/KY/BEST)
+let bestReturns = [];   // BEST 반품 이력
 let products = ['JUC','MEDIAS','DELL']; // 전역 제품목록
 let curInvCompany = 'AMT'; // 현재 재고 회사
 
@@ -1151,6 +1315,8 @@ const LS_INV     = 'amt2_inv';
 const LS_PRODS   = 'amt2_products';
 const LS_INTERNAL= 'amt2_internal';
 const LS_AUDIT   = 'amt2_audit';
+const LS_TX      = 'amt2_tx';
+const LS_BEST    = 'amt2_best';
 
 function loadLS(){
   try{
@@ -1160,6 +1326,8 @@ function loadLS(){
     invLogs =JSON.parse(localStorage.getItem(LS_INV)||'[]');
     internalTrades=JSON.parse(localStorage.getItem(LS_INTERNAL)||'[]');
     auditLogs=JSON.parse(localStorage.getItem(LS_AUDIT)||'[]');
+    txLogs=JSON.parse(localStorage.getItem(LS_TX)||'[]');
+    bestReturns=JSON.parse(localStorage.getItem(LS_BEST)||'[]');
     const p=JSON.parse(localStorage.getItem(LS_PRODS)||'null');
     if(p) products=p;
     // 기존 invLogs에 company 없으면 AMT로 기본설정
@@ -1177,6 +1345,8 @@ function saveLS(){
   // 감사 로그는 최근 500건만 유지
   if(auditLogs.length>1000) auditLogs=auditLogs.slice(-1000);
   localStorage.setItem(LS_AUDIT,JSON.stringify(auditLogs));
+  localStorage.setItem(LS_TX,JSON.stringify(txLogs));
+  localStorage.setItem(LS_BEST,JSON.stringify(bestReturns));
 }
 
 /* ═══ 기본 대리점 데이터 ═══ */
@@ -1348,13 +1518,16 @@ function init(){
   document.getElementById('rptMonth').value=rptMon;
 
   // 기본날짜
-  document.getElementById('oDate').value=today();
-  document.getElementById('invDate').value=today();
-  document.getElementById('itDate').value=today();
+  const _setVal=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v; };
+  _setVal('oDate',today());
+  _setVal('invDate',today());
+  _setVal('itDate',today());
+  _setVal('txDate',today());
+  _setVal('bestDate',today());
 
   // 필터 기본값
   const cm=curMonth;
-  ['ofMonth','rfMonth','invFilterM','itFilterM'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=cm; });
+  ['ofMonth','rfMonth','invFilterM','itFilterM','txFilterM'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=cm; });
 
   // 1년 이전 데이터 자동 정리
   purgeOldData();
@@ -1379,6 +1552,7 @@ function refreshAll(){
   renderInvHistory();
   renderDealerCards();
   renderReport();
+  renderDebtSummary();
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2148,34 +2322,36 @@ function renderInvHistory(){
    INTERNAL TRADE (AMT → KY)
 ═══════════════════════════════════════════════════════ */
 function itOnProduct(){
-  const prod=document.getElementById('itProduct').value;
-  if(!prod){ 
-    document.getElementById('itAmtStock').textContent='-';
-    document.getElementById('itKyStock').textContent='-';
+  const prodEl=document.getElementById('itProduct'); if(!prodEl) return;
+  const prod=prodEl.value;
+  const amtEl=document.getElementById('itAmtStock');
+  const kyEl=document.getElementById('itKyStock');
+  if(!prod){
+    if(amtEl) amtEl.textContent='-';
+    if(kyEl) kyEl.textContent='-';
     return;
   }
   const amtQty=calcStock(prod,'AMT');
   const kyQty=calcStock(prod,'KY');
-  const amtEl=document.getElementById('itAmtStock');
-  const kyEl=document.getElementById('itKyStock');
-  amtEl.textContent=`${fmt(amtQty)}개`;
-  amtEl.style.color=amtQty<0?'var(--red)':amtQty<10?'var(--yellow)':'var(--text)';
-  kyEl.textContent=`${fmt(kyQty)}개`;
-  kyEl.style.color=kyQty<0?'var(--red)':kyQty<10?'var(--yellow)':'var(--text)';
+  if(amtEl){ amtEl.textContent=`${fmt(amtQty)}개`; amtEl.style.color=amtQty<0?'var(--red)':amtQty<10?'var(--yellow)':'var(--text)'; }
+  if(kyEl){ kyEl.textContent=`${fmt(kyQty)}개`; kyEl.style.color=kyQty<0?'var(--red)':kyQty<10?'var(--yellow)':'var(--text)'; }
 }
 
 function itCalcTotal(){
-  const q=parseInput(document.getElementById('itQty'));
-  const p=parseInput(document.getElementById('itPrice'));
-  setInputFmt(document.getElementById('itTotal'), q*p);
+  const qEl=document.getElementById('itQty'); const pEl=document.getElementById('itPrice'); const tEl=document.getElementById('itTotal');
+  if(!qEl||!pEl||!tEl) return;
+  setInputFmt(tEl, parseInput(qEl)*parseInput(pEl));
 }
 
 async function saveInternal(){
-  const date=document.getElementById('itDate').value;
-  const product=document.getElementById('itProduct').value;
-  const qty=parseInput(document.getElementById('itQty'));
-  const price=parseInput(document.getElementById('itPrice'));
-  const memo=document.getElementById('itMemo').value;
+  const dateEl=document.getElementById('itDate');
+  const prodEl=document.getElementById('itProduct');
+  if(!dateEl||!prodEl){ toast('내부거래 입력 폼을 찾을 수 없습니다','error'); return; }
+  const date=dateEl.value;
+  const product=prodEl.value;
+  const qty=parseInput(document.getElementById('itQty')||{value:'0'});
+  const price=parseInput(document.getElementById('itPrice')||{value:'0'});
+  const memo=(document.getElementById('itMemo')||{value:''}).value||'';
   const total=qty*price;
 
   if(!date||!product||qty<=0){ toast('날짜·제품·수량을 입력하세요','error'); return; }
@@ -2287,6 +2463,257 @@ function renderInternalList(){
       }).join('')}
       </tbody>
     </table></div>`;
+}
+
+/* ═══════════════════════════════════════════════════════
+   채권채무 관리 (TX)
+   txType 값 의미:
+   AMT_to_KY  : AMT가 KY에 물품공급 → AMT채권+, KY채무+
+   KY_to_AMT  : KY가 AMT에 돈 송금  → AMT채권-, KY채무-
+   AMT_to_BEST: AMT→BEST 물품공급
+   BEST_to_AMT: BEST→AMT 송금
+   KY_to_BEST : KY→BEST 물품공급
+   BEST_to_KY : BEST→KY 송금
+   AMT_loan_KY: AMT→KY 대출      → AMT채권+, KY채무+
+   KY_loan_AMT: KY→AMT 대출      → AMT채권-, KY채무-
+   adj_AMT_KY : 조정
+   adj_AMT_BEST: 조정
+   adj_KY_BEST: 조정
+   best_return_AMT: BEST에서 AMT 반품
+   best_return_KY : BEST에서 KY 반품
+═══════════════════════════════════════════════════════ */
+
+// 탭 전환
+function txTab(name, btn){
+  document.querySelectorAll('.tab-btn').forEach(b=>{
+    if(b.closest('#page-internal')) b.classList.remove('active');
+  });
+  document.querySelectorAll('#page-internal .tab-pane').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tx-tab-'+name).classList.add('active');
+  if(name==='tx') renderTxList();
+  if(name==='best') renderBestReturnList();
+  if(name==='history') renderInternalList();
+}
+
+// 거래 유형 레이블
+function txTypeLabel(type){
+  const map={
+    'AMT_to_KY':'AMT→KY 물품공급','KY_to_AMT':'KY→AMT 대금송금',
+    'AMT_to_BEST':'AMT→BEST 물품공급','BEST_to_AMT':'BEST→AMT 대금송금',
+    'KY_to_BEST':'KY→BEST 물품공급','BEST_to_KY':'BEST→KY 대금송금',
+    'AMT_loan_KY':'AMT→KY 무이자대출','KY_loan_AMT':'KY→AMT 대출상환/대출',
+    'adj_AMT_KY':'AMT↔KY 조정','adj_AMT_BEST':'AMT↔BEST 조정','adj_KY_BEST':'KY↔BEST 조정',
+    'best_return_AMT':'BEST←AMT 반품','best_return_KY':'BEST←KY 반품'
+  };
+  return map[type]||type;
+}
+
+// 거래 유형에 따른 방향 배지 HTML
+function txDirectionBadge(type){
+  const parts=type.replace('adj_','').replace('best_return_','').split('_to_').join('|').split('_loan_').join('|').split('|');
+  if(parts.length<2) return type;
+  const colors={'AMT':'var(--amt)','KY':'var(--ky)','BEST':'var(--best)'};
+  const f=parts[0],t=parts[1];
+  const fc=colors[f]||'#888', tc=colors[t]||'#888';
+  return `<span style="background:${fc}20;color:${fc};padding:1px 6px;border-radius:10px;font-size:.68rem;font-weight:700">${f}</span>
+    <span style="margin:0 3px;font-weight:700;color:#888">→</span>
+    <span style="background:${tc}20;color:${tc};padding:1px 6px;border-radius:10px;font-size:.68rem;font-weight:700">${t}</span>`;
+}
+
+// AMT↔KY 잔액 계산 (AMT 기준: 양수=AMT채권, 음수=AMT채무)
+function calcBalance(compA, compB){
+  let balance=0;
+  // 조정값
+  txLogs.filter(t=>t.type===`adj_${compA}_${compB}`).forEach(t=>{ balance+=t.adjAmt; });
+  // 거래내역
+  txLogs.filter(t=>t.type!==`adj_${compA}_${compB}`).forEach(t=>{
+    const from=t.type.split('_to_')[0]||t.type.split('_loan_')[0];
+    const to=t.type.includes('_to_')?t.type.split('_to_')[1]:t.type.split('_loan_')[1];
+    if(from===compA && to===compB) balance+=t.amount;   // compA가 줬다 → compA 채권 증가
+    if(from===compB && to===compA) balance-=t.amount;   // compB가 줬다 → compA 채권 감소
+  });
+  // BEST 반품: 반품받은 회사의 채권 감소 (물건 돌려받은 것)
+  if(compA==='AMT'&&compB==='BEST') bestReturns.filter(r=>r.from==='AMT').forEach(r=>{ balance-=r.total; });
+  if(compA==='KY'&&compB==='BEST') bestReturns.filter(r=>r.from==='KY').forEach(r=>{ balance-=r.total; });
+  if(compA==='AMT'&&compB==='KY'){} // 기존 물품공급(internalTrades)도 반영
+  // internalTrades 반영 (AMT→KY 물품공급은 AMT 채권)
+  if((compA==='AMT'&&compB==='KY')||(compA==='KY'&&compB==='AMT')){
+    const sign=(compA==='AMT')?1:-1;
+    internalTrades.forEach(t=>{ balance+=sign*t.total; });
+  }
+  return balance;
+}
+
+// 잔액 요약 렌더링
+function renderDebtSummary(){
+  const pairs=[['AMT','KY'],['AMT','BEST'],['KY','BEST']];
+  const wrap=document.getElementById('debtSummary');
+  if(!wrap) return;
+  wrap.innerHTML=pairs.map(([a,b])=>{
+    const bal=calcBalance(a,b);
+    const isCredit=bal>=0;
+    const label=isCredit?`${a} 채권 (${b} 채무)`:`${a} 채무 (${b} 채권)`;
+    const badgeCls=isCredit?'credit-badge':'debt-badge';
+    const valCls=isCredit?'balance-pos':'balance-neg';
+    return `<div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:4px solid ${isCredit?'#059669':'#dc2626'}">
+      <div style="font-size:.72rem;color:#888;margin-bottom:4px">${a} ↔ ${b}</div>
+      <div class="${valCls}" style="font-size:1.1rem;font-family:'JetBrains Mono',monospace">${fmt(Math.abs(bal))}원</div>
+      <div style="margin-top:4px"><span class="${badgeCls}">${label}</span></div>
+    </div>`;
+  }).join('');
+}
+
+// 거래 저장
+async function saveTx(){
+  const date=document.getElementById('txDate').value;
+  const type=document.getElementById('txType').value;
+  const amount=parseInput(document.getElementById('txAmt'));
+  const memo=document.getElementById('txMemo').value;
+  if(!date||!type||amount<=0){ toast('날짜·유형·금액을 입력하세요','error'); return; }
+  const id='tx_'+Date.now();
+  const entry={id,date,type,amount,memo,createdAt:new Date().toISOString()};
+  txLogs.push(entry);
+  addAuditLog('create','채권채무',`${txTypeLabel(type)} ${fmt(amount)}원 (${date}) ${memo}`);
+  saveLS(); await fbSaveAll();
+  toast('거래 저장 완료!','success');
+  document.getElementById('txAmt').value='';
+  document.getElementById('txMemo').value='';
+  document.getElementById('txMsg').textContent='저장됨 · '+date;
+  setTimeout(()=>document.getElementById('txMsg').textContent='',3000);
+  renderDebtSummary(); renderTxList();
+}
+
+function txTypeChange(){
+  // 유형 선택 시 힌트 표시 (선택적)
+}
+
+// 거래 목록 렌더링
+function renderTxList(){
+  const mo=document.getElementById('txFilterM').value;
+  const co=document.getElementById('txFilterC').value;
+  let list=[...txLogs].sort((a,b)=>b.date.localeCompare(a.date)||b.createdAt.localeCompare(a.createdAt));
+  if(mo) list=list.filter(t=>t.date.startsWith(mo));
+  if(co) list=list.filter(t=>t.type.includes(co));
+  const el=document.getElementById('txList');
+  if(!list.length){ el.innerHTML=emptyHtml('거래내역이 없습니다'); return; }
+  const total=list.reduce((s,t)=>s+t.amount,0);
+  el.innerHTML=`
+    <div style="padding:8px 12px;background:var(--surface2);border-radius:6px;margin-bottom:10px;font-size:.82rem;display:flex;gap:16px;flex-wrap:wrap">
+      <span>총 <b>${list.length}건</b></span>
+      <span>합계 <b>${fmt(total)}원</b></span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>날짜</th><th>거래유형</th><th>방향</th><th class="td-r">금액</th><th>메모</th><th class="td-c">삭제</th></tr></thead>
+      <tbody>
+      ${list.map(t=>`<tr>
+        <td class="td-mono">${t.date}</td>
+        <td style="font-size:.78rem">${txTypeLabel(t.type)}</td>
+        <td>${txDirectionBadge(t.type)}</td>
+        <td class="td-mono td-r tx-in">${fmt(t.amount)}원</td>
+        <td style="font-size:.75rem;color:var(--text2)">${t.memo||''}</td>
+        <td class="td-c"><button class="btn btn-danger btn-xs" onclick="deleteTx('${t.id}')">✕</button></td>
+      </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+}
+
+async function deleteTx(id){
+  if(!confirm('이 거래내역을 삭제할까요?')) return;
+  const t=txLogs.find(x=>x.id===id);
+  if(t) addAuditLog('delete','채권채무',`삭제: ${txTypeLabel(t.type)} ${fmt(t.amount)}원 (${t.date})`,t);
+  txLogs=txLogs.filter(x=>x.id!==id);
+  saveLS(); await fbSaveAll();
+  toast('삭제 완료','info');
+  renderDebtSummary(); renderTxList();
+}
+
+// 채무 조정 저장
+async function saveDebtAdj(compA, compB){
+  const dateEl=document.getElementById(`adjDate_${compA}_${compB}`);
+  const amtEl=document.getElementById(`adjAmt_${compA}_${compB}`);
+  const memoEl=document.getElementById(`adjMemo_${compA}_${compB}`);
+  const date=dateEl.value;
+  const rawVal=amtEl.value.replace(/,/g,'');
+  const adjAmt=parseFloat(rawVal)||0;
+  const memo=memoEl.value;
+  if(!date){ toast('날짜를 입력하세요','error'); return; }
+  if(adjAmt===0){ toast('금액을 입력하세요','error'); return; }
+  const id='adj_'+Date.now();
+  const entry={id, date, type:`adj_${compA}_${compB}`, adjAmt, memo, createdAt:new Date().toISOString()};
+  txLogs.push(entry);
+  addAuditLog('edit','채권채무',`${compA}↔${compB} 채무조정 ${fmt(adjAmt)}원 (${date}) ${memo}`);
+  saveLS(); await fbSaveAll();
+  toast(`${compA}↔${compB} 조정 저장 완료!`,'success');
+  amtEl.value='';
+  renderDebtSummary();
+}
+
+// BEST 반품
+function bestCalcTotal(){
+  const p=parseInput(document.getElementById('bestPrice'));
+  const q=parseInput(document.getElementById('bestQty'));
+  setInputFmt(document.getElementById('bestTotal'), p*q);
+}
+
+async function saveBestReturn(){
+  const date=document.getElementById('bestDate').value;
+  const from=document.getElementById('bestFrom').value;
+  const product=document.getElementById('bestProduct').value.trim();
+  const price=parseInput(document.getElementById('bestPrice'));
+  const qty=parseInput(document.getElementById('bestQty'));
+  const memo=document.getElementById('bestMemo').value;
+  const total=price*qty;
+  if(!date||!product||qty<=0||price<=0){ toast('날짜·제품명·단가·수량을 입력하세요','error'); return; }
+  const id='best_'+Date.now();
+  const entry={id,date,from,product,price,qty,total,memo,createdAt:new Date().toISOString()};
+  bestReturns.push(entry);
+  addAuditLog('create','채권채무',`BEST←${from} 반품 ${product} ${fmt(qty)}개 ${fmt(total)}원 (${date})`);
+  saveLS(); await fbSaveAll();
+  toast('BEST 반품 저장 완료!','success');
+  document.getElementById('bestProduct').value='';
+  document.getElementById('bestPrice').value='';
+  document.getElementById('bestQty').value='';
+  document.getElementById('bestTotal').value='';
+  document.getElementById('bestMemo').value='';
+  renderDebtSummary(); renderBestReturnList();
+}
+
+function renderBestReturnList(){
+  const list=[...bestReturns].sort((a,b)=>b.date.localeCompare(a.date));
+  const el=document.getElementById('bestReturnList');
+  if(!list.length){ el.innerHTML=emptyHtml('반품 이력이 없습니다'); return; }
+  const total=list.reduce((s,r)=>s+r.total,0);
+  el.innerHTML=`
+    <div style="padding:8px 12px;background:var(--surface2);border-radius:6px;margin-bottom:10px;font-size:.82rem;display:flex;gap:16px;flex-wrap:wrap">
+      <span>총 <b>${list.length}건</b></span>
+      <span>합계 <b>${fmt(total)}원</b></span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>날짜</th><th>출처</th><th>제품명</th><th class="td-r">단가</th><th class="td-r">수량</th><th class="td-r">총금액</th><th>메모</th><th class="td-c">삭제</th></tr></thead>
+      <tbody>
+      ${list.map(r=>`<tr>
+        <td class="td-mono">${r.date}</td>
+        <td><span style="background:var(--best-bg);color:var(--best);padding:1px 6px;border-radius:10px;font-size:.68rem;font-weight:700">${r.from}</span>→<span style="background:var(--best-bg);color:var(--best);padding:1px 6px;border-radius:10px;font-size:.68rem;font-weight:700">BEST</span></td>
+        <td style="font-size:.8rem">${r.product}</td>
+        <td class="td-mono td-r">${fmt(r.price)}</td>
+        <td class="td-mono td-r">${fmt(r.qty)}</td>
+        <td class="td-mono td-r tx-in">${fmt(r.total)}원</td>
+        <td style="font-size:.75rem;color:var(--text2)">${r.memo||''}</td>
+        <td class="td-c"><button class="btn btn-danger btn-xs" onclick="deleteBestReturn('${r.id}')">✕</button></td>
+      </tr>`).join('')}
+      </tbody>
+    </table></div>`;
+}
+
+async function deleteBestReturn(id){
+  if(!confirm('이 반품 이력을 삭제할까요?')) return;
+  const r=bestReturns.find(x=>x.id===id);
+  if(r) addAuditLog('delete','채권채무',`반품삭제: ${r.from}→BEST ${r.product} ${fmt(r.qty)}개 ${fmt(r.total)}원`,r);
+  bestReturns=bestReturns.filter(x=>x.id!==id);
+  saveLS(); await fbSaveAll();
+  toast('삭제 완료','info');
+  renderDebtSummary(); renderBestReturnList();
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2664,7 +3091,7 @@ async function fbBackupToday(force=false){
   const lastBackup=localStorage.getItem('amt_lastBackup')||'';
   if(!force && lastBackup===ds) return; // 오늘 이미 백업됨
 
-  const payload={ orders, invLogs, dealers, products, internalTrades, backedUpAt:new Date().toISOString() };
+  const payload={ orders, invLogs, dealers, products, internalTrades, auditLogs, txLogs, bestReturns, backedUpAt:new Date().toISOString() };
   try{
     await fb.set(fb.ref(fb.db,'amt_backup/'+ds), payload);
     localStorage.setItem('amt_lastBackup', ds);
@@ -2828,6 +3255,8 @@ function purgeOldData(){
   orders        = orders.filter(o=>(o.orderDate||'') >= cutoffStr);
   invLogs       = invLogs.filter(i=>(i.date||'') >= cutoffStr);
   internalTrades= internalTrades.filter(t=>(t.date||'') >= cutoffStr);
+  txLogs        = txLogs.filter(t=>(t.date||'') >= cutoffStr);
+  bestReturns   = bestReturns.filter(r=>(r.date||'') >= cutoffStr);
 
   const deleted=(before.orders-orders.length)+(before.invLogs-invLogs.length)+(before.internalTrades-internalTrades.length);
   if(deleted>0){
@@ -2840,7 +3269,7 @@ function purgeOldData(){
 async function fbSaveAll(){
   const fb=window._fb; if(!fb||!fb.ready) return;
   const now=new Date().toISOString();
-  const payload={ orders, invLogs, dealers, products, internalTrades, auditLogs, _updatedAt:now };
+  const payload={ orders, invLogs, dealers, products, internalTrades, auditLogs, txLogs, bestReturns, _updatedAt:now };
   try{
     await fb.set(fb.ref(fb.db,'amt_data'), payload);
     setLastSync(now);
@@ -2904,6 +3333,8 @@ function _applyRemote(remote){
   if(remote.products) products=remote.products;
   if(remote.internalTrades) internalTrades=remote.internalTrades;
   if(remote.auditLogs) auditLogs=remote.auditLogs;
+  if(remote.txLogs) txLogs=remote.txLogs;
+  if(remote.bestReturns) bestReturns=remote.bestReturns;
   const now=remote._updatedAt||new Date().toISOString();
   localStorage.setItem('amt_updatedAt', now);
   saveLS();
