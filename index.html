@@ -1249,40 +1249,38 @@ let recCalMon = new Date().toISOString().slice(0,7);
 let rptMon    = new Date().toISOString().slice(0,7);
 
 function setMonth(v){ curMonth=v; }
+function _ensureMonthOption(selId, mo){
+  const sel=document.getElementById(selId);
+  if(!sel) return;
+  if(!sel.querySelector('option[value="'+mo+'"]')){
+    const opt=document.createElement('option');
+    opt.value=mo; opt.textContent=mo.replace('-','년 ')+'월';
+    const insertBefore=[...sel.options].find(o=>o.value>mo);
+    if(insertBefore) sel.insertBefore(opt,insertBefore);
+    else sel.appendChild(opt);
+  }
+  sel.value=mo;
+}
+
 function chMonth(d){
   const [y,m]=curMonth.split('-').map(Number);
   const nd=new Date(y,m-1+d,1);
   curMonth=nd.toISOString().slice(0,7);
-  document.getElementById('dashMonth').value=curMonth;
+  _ensureMonthOption('dashMonth', curMonth);
   renderDash();
 }
-function goToday(){ curMonth=new Date().toISOString().slice(0,7); document.getElementById('dashMonth').value=curMonth; renderDash(); }
+function goToday(){ curMonth=new Date().toISOString().slice(0,7); _ensureMonthOption('dashMonth',curMonth); renderDash(); }
 
 function chRecMonth(d){
   const [y,m]=recCalMon.split('-').map(Number);
   const nd=new Date(y,m-1+d,1);
   recCalMon=nd.toISOString().slice(0,7);
-  // 드롭다운에 해당 옵션 없으면 동적 추가
-  const selEl=document.getElementById('recCalMonth');
-  if(selEl){
-    if(!selEl.querySelector(`option[value="${recCalMon}"]`)){
-      const opt=document.createElement('option');
-      opt.value=recCalMon;
-      opt.textContent=recCalMon.replace('-','년 ')+'월';
-      // 정렬 위치 찾아서 삽입
-      const opts=[...selEl.options];
-      const insertBefore=opts.find(o=>o.value>recCalMon);
-      if(insertBefore) selEl.insertBefore(opt,insertBefore);
-      else selEl.appendChild(opt);
-    }
-    selEl.value=recCalMon;
-  }
+  _ensureMonthOption('recCalMonth', recCalMon);
   renderRecCalendar();
 }
 function goRecToday(){
   recCalMon=new Date().toISOString().slice(0,7);
-  const selEl=document.getElementById('recCalMonth');
-  if(selEl) selEl.value=recCalMon;
+  _ensureMonthOption('recCalMonth', recCalMon);
   renderRecCalendar();
 }
 
@@ -1303,7 +1301,7 @@ function init(){
 
   // 월 드롭다운 채우기
   const months=[];
-  for(let y=2026;y<=2030;y++) for(let m=1;m<=12;m++) months.push(`${y}-${String(m).padStart(2,'0')}`);
+  for(let y=2024;y<=2032;y++) for(let m=1;m<=12;m++) months.push(`${y}-${String(m).padStart(2,'0')}`);
 
   ['dashMonth','recCalMonth','rptMonth'].forEach(id=>{
     const el=document.getElementById(id);
@@ -1676,25 +1674,40 @@ function showMarkDoneModal(id){
   modal.id='markDoneModal';
   modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999';
   modal.innerHTML=`
-    <div style="background:#fff;border-radius:12px;padding:24px;min-width:300px;max-width:360px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18)">
-      <div style="font-size:1rem;font-weight:700;margin-bottom:16px">✓ 수금 처리</div>
-      <div style="font-size:.85rem;color:#555;margin-bottom:16px;line-height:1.7">
-        <b>${o.dealerName}</b><br>
-        ${o.product} ${fmt(o.qty)}개 &nbsp;·&nbsp; <b>${fmt(o.total+(o.fee||0))}원</b><br>
-        수금예정일: ${o.dueDate}
+    <div style="background:#fff;border-radius:12px;padding:24px;min-width:300px;max-width:380px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <div style="font-size:1rem;font-weight:700;margin-bottom:14px">수금 처리</div>
+      <div style="font-size:.85rem;background:#f8fafc;border-radius:8px;padding:12px;margin-bottom:16px;line-height:2">
+        <span style="color:#888;font-size:.75rem">대리점</span><br>
+        <b style="font-size:.95rem">${o.dealerName}</b><br>
+        <span style="color:#888;font-size:.75rem">제품 / 금액</span><br>
+        ${o.product} ${fmt(o.qty)}개 &nbsp; <b>${fmt(o.total+(o.fee||0))}원</b><br>
+        <span style="color:#888;font-size:.75rem">수금 예정일</span><br>
+        <b style="color:#2563eb">${o.dueDate}</b>
+        ${o.dueDate < today() ? ' <span style="color:#dc2626;font-size:.75rem">[연체]</span>' : ''}
       </div>
       <div style="margin-bottom:16px">
-        <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:6px">
-          실제 수금일 <span style="font-weight:400;color:#888">(예정일과 다른 경우 수정)</span>
-        </label>
+        <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:4px">실제 수금일</label>
+        <div style="font-size:.75rem;color:#888;margin-bottom:6px">
+          예정일: <b>${o.dueDate}</b> &nbsp;/&nbsp; 오늘: <b>${today()}</b>
+        </div>
         <input type="date" id="markDoneDate" value="${today()}"
-          style="width:100%;padding:8px 10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.9rem">
+          style="width:100%;padding:9px 10px;border:2px solid #2563eb;border-radius:8px;font-size:.95rem;font-weight:600;color:#1e3a5f;box-sizing:border-box">
+        <div style="display:flex;gap:6px;margin-top:6px">
+          <button type="button" onclick="document.getElementById('markDoneDate').value='${o.dueDate}'"
+            style="flex:1;padding:6px 4px;border-radius:6px;border:1px solid #d1d5db;background:#f1f5f9;font-size:.75rem;cursor:pointer">
+            예정일로 (${o.dueDate})
+          </button>
+          <button type="button" onclick="document.getElementById('markDoneDate').value='${today()}'"
+            style="flex:1;padding:6px 4px;border-radius:6px;border:1px solid #d1d5db;background:#f1f5f9;font-size:.75rem;cursor:pointer">
+            오늘로 (${today()})
+          </button>
+        </div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button onclick="document.getElementById('markDoneModal').remove()"
+        <button type="button" onclick="document.getElementById('markDoneModal').remove()"
           style="padding:8px 16px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;cursor:pointer;font-size:.85rem">취소</button>
-        <button onclick="confirmMarkDone('${id}')"
-          style="padding:8px 18px;border-radius:8px;border:none;background:#dc2626;color:#fff;cursor:pointer;font-size:.85rem;font-weight:600">✓ 수금 확인</button>
+        <button type="button" onclick="confirmMarkDone('${id}')"
+          style="padding:8px 18px;border-radius:8px;border:none;background:#dc2626;color:#fff;cursor:pointer;font-size:.85rem;font-weight:600">수금 확인</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
