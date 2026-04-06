@@ -1259,12 +1259,24 @@ function chMonth(d){
 function goToday(){ curMonth=new Date().toISOString().slice(0,7); document.getElementById('dashMonth').value=curMonth; renderDash(); }
 
 function chRecMonth(d){
-  const selEl=document.getElementById('recCalMonth');
-  const cur=(selEl&&selEl.value)?selEl.value:recCalMon;
-  const [y,m]=cur.split('-').map(Number);
+  const [y,m]=recCalMon.split('-').map(Number);
   const nd=new Date(y,m-1+d,1);
   recCalMon=nd.toISOString().slice(0,7);
-  if(selEl) selEl.value=recCalMon;
+  // 드롭다운에 해당 옵션 없으면 동적 추가
+  const selEl=document.getElementById('recCalMonth');
+  if(selEl){
+    if(!selEl.querySelector(`option[value="${recCalMon}"]`)){
+      const opt=document.createElement('option');
+      opt.value=recCalMon;
+      opt.textContent=recCalMon.replace('-','년 ')+'월';
+      // 정렬 위치 찾아서 삽입
+      const opts=[...selEl.options];
+      const insertBefore=opts.find(o=>o.value>recCalMon);
+      if(insertBefore) selEl.insertBefore(opt,insertBefore);
+      else selEl.appendChild(opt);
+    }
+    selEl.value=recCalMon;
+  }
   renderRecCalendar();
 }
 function goRecToday(){
@@ -1649,9 +1661,65 @@ function renderOrders(){
 async function markDone(id){
   const o=orders.find(x=>x.id===id);
   if(!o) return;
-  if(!confirm(`수금 처리하시겠습니까?\n\n대리점: ${o.dealerName}\n제품: ${o.product} ${fmt(o.qty)}개\n금액: ${fmt(o.total+(o.fee||0))}원\n수금예정일: ${o.dueDate}`)) return;
-  o.status='done'; o.collectedAt=today();
-  addAuditLog('status','수금',`수금완료: ${o.dealerName} ${o.product} ${fmt(o.total)}원 (수금예정일:${o.dueDate})`);
+  // 수금날짜 확인 모달 표시
+  showMarkDoneModal(id);
+}
+
+function showMarkDoneModal(id){
+  const o=orders.find(x=>x.id===id);
+  if(!o) return;
+  // 기존 모달 제거
+  const old=document.getElementById('markDoneModal');
+  if(old) old.remove();
+
+  const modal=document.createElement('div');
+  modal.id='markDoneModal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999';
+  modal.innerHTML=`
+    <div style="background:#fff;border-radius:12px;padding:24px;min-width:300px;max-width:360px;width:90%;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <div style="font-size:1rem;font-weight:700;margin-bottom:16px">✓ 수금 처리</div>
+      <div style="font-size:.85rem;color:#555;margin-bottom:16px;line-height:1.7">
+        <b>${o.dealerName}</b><br>
+        ${o.product} ${fmt(o.qty)}개 &nbsp;·&nbsp; <b>${fmt(o.total+(o.fee||0))}원</b><br>
+        수금예정일: ${o.dueDate}
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:.82rem;font-weight:600;display:block;margin-bottom:6px">
+          실제 수금일 <span style="font-weight:400;color:#888">(예정일과 다른 경우 수정)</span>
+        </label>
+        <input type="date" id="markDoneDate" value="${today()}"
+          style="width:100%;padding:8px 10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.9rem">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button onclick="document.getElementById('markDoneModal').remove()"
+          style="padding:8px 16px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;cursor:pointer;font-size:.85rem">취소</button>
+        <button onclick="confirmMarkDone('${id}')"
+          style="padding:8px 18px;border-radius:8px;border:none;background:#dc2626;color:#fff;cursor:pointer;font-size:.85rem;font-weight:600">✓ 수금 확인</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  // 배경 클릭 시 닫기
+  modal.addEventListener('click', e=>{ if(e.target===modal) modal.remove(); });
+}
+
+async function confirmMarkDone(id){
+  const o=orders.find(x=>x.id===id);
+  if(!o) return;
+  const dateInput=document.getElementById('markDoneDate');
+  const collectedDate=dateInput?dateInput.value:today();
+  const oldDueDate=o.dueDate;
+
+  o.status='done';
+  o.collectedAt=collectedDate;
+  // 실제 수금일이 예정일과 다르면 수금예정일도 실제 수금일로 업데이트
+  if(collectedDate !== oldDueDate){
+    o.dueDate=collectedDate;
+    addAuditLog('status','수금',`수금완료: ${o.dealerName} ${o.product} ${fmt(o.total)}원 (예정일:${oldDueDate} → 실제수금일:${collectedDate})`);
+  } else {
+    addAuditLog('status','수금',`수금완료: ${o.dealerName} ${o.product} ${fmt(o.total)}원 (수금일:${collectedDate})`);
+  }
+
+  document.getElementById('markDoneModal').remove();
   saveLS();
   await fbSaveDoc('orders',id,o);
   toast('수금 완료 처리!','success');
