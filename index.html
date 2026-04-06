@@ -537,11 +537,11 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
 <nav class="nav">
   <button class="nav-btn active" data-page="dashboard" onclick="nav(this)">📊 대시보드</button>
   <button class="nav-btn" data-page="order" onclick="nav(this)">📦 발주입력</button>
-  <button class="nav-btn" data-page="internal" onclick="nav(this)">🔄 내부거래(AMT→KY)</button>
   <button class="nav-btn" data-page="receivable" onclick="nav(this)">💰 수금관리</button>
+  <button class="nav-btn" data-page="report" onclick="nav(this)">📈 리포트</button>
+  <button class="nav-btn" data-page="internal" onclick="nav(this)">🔄 내부거래(AMT→KY)</button>
   <button class="nav-btn" data-page="inventory" onclick="nav(this)">🗃️ 재고</button>
   <button class="nav-btn" data-page="dealers" onclick="nav(this)">🏢 대리점관리</button>
-  <button class="nav-btn" data-page="report" onclick="nav(this)">📈 리포트</button>
   <button class="nav-btn" data-page="settings" onclick="nav(this)">⚙️ 설정</button>
 </nav>
 
@@ -913,6 +913,21 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
       <div id="rptProduct"></div>
     </div>
   </div>
+  <!-- 그래프 영역 -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><div class="card-title-dot" style="background:var(--blue)"></div>월별 매출 추이</div>
+      </div>
+      <div id="rptChartMonthly" style="padding:12px 4px"></div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><div class="card-title-dot" style="background:var(--medias)"></div>제품별 판매량</div>
+      </div>
+      <div id="rptChartProduct" style="padding:12px 4px"></div>
+    </div>
+  </div>
   <div class="card" style="margin-top:12px">
     <div class="card-header">
       <div class="card-title"><div class="card-title-dot" style="background:var(--green)"></div>월별 누적 매출 (전체)</div>
@@ -1267,6 +1282,7 @@ function chMonth(d){
   const nd=new Date(y,m-1+d,1);
   curMonth=nd.toISOString().slice(0,7);
   _ensureMonthOption('dashMonth', curMonth);
+  document.getElementById('dashMonth').value=curMonth;
   renderDash();
 }
 function goToday(){ curMonth=new Date().toISOString().slice(0,7); _ensureMonthOption('dashMonth',curMonth); renderDash(); }
@@ -1276,6 +1292,7 @@ function chRecMonth(d){
   const nd=new Date(y,m-1+d,1);
   recCalMon=nd.toISOString().slice(0,7);
   _ensureMonthOption('recCalMonth', recCalMon);
+  document.getElementById('recCalMonth').value=recCalMon;
   renderRecCalendar();
 }
 function goRecToday(){
@@ -1576,7 +1593,7 @@ function renderDash(){
           <span style="font-size:.8rem;font-family:'JetBrains Mono',monospace">${fmt(s.total)}원</span>
         </div>
         <div class="progress"><div class="progress-fill" style="width:${pct}%;background:${c}"></div></div>
-        <div style="font-size:.68rem;color:var(--text3);margin-top:2px">${fmt(s.qty)}개 · ${pct}%</div>
+        <div style="font-size:.68rem;color:var(--text2);font-weight:600;margin-top:2px">${fmt(s.qty)}개 · ${pct}%</div>
       </div>`;
     }).join('')}
   </div>`;
@@ -2479,6 +2496,52 @@ function renderReport(){
       }).join('')}</tbody>
     </table></div>`;
   } else { document.getElementById('rptMonthly').innerHTML=emptyHtml('데이터 없음'); }
+
+  // ── 월별 매출 추이 그래프 ──
+  const chartMonEl=document.getElementById('rptChartMonthly');
+  if(allMonths.length){
+    const recentMonths=allMonths.slice(-12);
+    const maxTot=Math.max(...recentMonths.map(m=>{
+      const mO=orders.filter(o=>ym(o.orderDate)===m);
+      return mO.reduce((s,o)=>s+o.total+(o.fee||0),0);
+    }),1);
+    const bars=recentMonths.map(m=>{
+      const mO=orders.filter(o=>ym(o.orderDate)===m);
+      const tot=mO.reduce((s,o)=>s+o.total+(o.fee||0),0);
+      const barH=Math.max(Math.round(tot/maxTot*80),3);
+      const isCur=m===mo;
+      const label=m.slice(5)+'월';
+      return `<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:0">
+        <div style="font-size:.6rem;color:var(--text2);font-weight:600;margin-bottom:3px;white-space:nowrap">${tot>0?fmt(Math.round(tot/10000))+'만':''}</div>
+        <div style="width:100%;display:flex;align-items:flex-end;height:80px">
+          <div style="width:100%;height:${barH}px;background:${isCur?'var(--blue)':'var(--blue-mid)'};border-radius:4px 4px 0 0;transition:height .3s"></div>
+        </div>
+        <div style="font-size:.62rem;color:${isCur?'var(--blue)':'var(--text3)'};font-weight:${isCur?'700':'500'};margin-top:4px">${label}</div>
+      </div>`;
+    }).join('');
+    chartMonEl.innerHTML=`<div style="display:flex;gap:3px;align-items:flex-end;padding:0 4px">${bars}</div>`;
+  } else { chartMonEl.innerHTML=emptyHtml('데이터 없음'); }
+
+  // ── 제품별 판매량 그래프 ──
+  const chartProdEl=document.getElementById('rptChartProduct');
+  if(pRows.length){
+    const pColorMap={'JUC':'var(--juc)','MEDIAS':'var(--medias)','DELL':'var(--dell)','AMT':'var(--amt)','KY':'var(--ky)'};
+    const maxQty=Math.max(...pRows.map(([,d])=>d.qty),1);
+    const prodBars=pRows.map(([p,d])=>{
+      const pct=Math.round(d.qty/maxQty*100);
+      const color=pColorMap[p]||'var(--gray)';
+      return `<div style="margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+          <span style="font-size:.72rem;font-weight:700;color:var(--text)">${p}</span>
+          <span style="font-size:.7rem;font-weight:700;color:var(--text2)">${fmt(d.qty)}개 · ${fmt(d.total)}원</span>
+        </div>
+        <div style="background:var(--border);border-radius:4px;height:14px;overflow:hidden">
+          <div style="width:${pct}%;height:100%;background:${color};border-radius:4px;transition:width .3s"></div>
+        </div>
+      </div>`;
+    }).join('');
+    chartProdEl.innerHTML=`<div style="padding:4px 8px">${prodBars}</div>`;
+  } else { chartProdEl.innerHTML=emptyHtml('데이터 없음'); }
 }
 
 /* ═══════════════════════════════════════════════════════
