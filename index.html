@@ -966,6 +966,47 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
     </div>
     <hr class="divider">
     <div class="setting-section">
+      <h3>📝 변경/삭제 이력</h3>
+      <p style="font-size:.78rem;color:var(--text2);margin-bottom:12px">발주·수금·재고·내부거래·대리점의 수정 및 삭제 기록입니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+        <select id="auditCatFilter" class="form-control" style="min-width:100px;font-size:.8rem" onchange="renderAuditLog()">
+          <option value="">전체 분류</option>
+          <option value="발주">발주</option>
+          <option value="수금">수금</option>
+          <option value="재고">재고</option>
+          <option value="내부거래">내부거래</option>
+          <option value="대리점">대리점</option>
+        </select>
+        <select id="auditActFilter" class="form-control" style="min-width:100px;font-size:.8rem" onchange="renderAuditLog()">
+          <option value="">전체 액션</option>
+          <option value="create">추가</option>
+          <option value="edit">수정</option>
+          <option value="delete">삭제</option>
+          <option value="status">상태변경</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="renderAuditLog()">🔍 조회</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('auditLogWrap').style.display='none'">닫기</button>
+      </div>
+      <div id="auditLogWrap" style="display:none">
+        <div id="auditLogList"></div>
+      </div>
+    </div>
+    <hr class="divider">
+    <div class="setting-section">
+      <h3>🔐 비밀번호 동기화</h3>
+      <p style="font-size:.78rem;color:var(--text2);margin-bottom:12px">구글 계정 없이 비밀번호만으로 다른 기기와 데이터를 공유합니다.<br>같은 비밀번호를 입력한 기기끼리만 데이터가 동기화됩니다.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <div class="form-group" style="margin:0;flex:1;min-width:180px">
+          <label>동기화 비밀번호</label>
+          <input type="password" id="syncPassword" placeholder="영문+숫자 조합 권장" style="font-size:.9rem">
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="syncWithPassword()">📤 이 기기 데이터 올리기</button>
+        <button class="btn btn-outline btn-sm" onclick="loadWithPassword()">📥 다른 기기 데이터 가져오기</button>
+      </div>
+      <p id="pwSyncMsg" style="font-size:.78rem;color:var(--text2);margin-top:8px"></p>
+    </div>
+    <hr class="divider">
+    <div class="setting-section">
       <h3>📋 수금조건 코드 안내</h3>
       <div class="table-wrap">
         <table>
@@ -1052,6 +1093,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
 ═══════════════════════════════════════════════════════ */
 let dealers = [];  // 대리점 마스터
 let _openDayDetail = null;  // 수금 캘린더 열린 날짜 유지용
+let auditLogs = [];  // 변경/삭제 이력
 let orders  = [];  // 발주/매출
 let invLogs = [];  // 재고이력
 let internalTrades = []; // AMT→KY 내부거래
@@ -1063,6 +1105,7 @@ const LS_ORDERS  = 'amt2_orders';
 const LS_INV     = 'amt2_inv';
 const LS_PRODS   = 'amt2_products';
 const LS_INTERNAL= 'amt2_internal';
+const LS_AUDIT   = 'amt2_audit';
 
 function loadLS(){
   try{
@@ -1071,6 +1114,7 @@ function loadLS(){
     orders  =JSON.parse(localStorage.getItem(LS_ORDERS)||'[]');
     invLogs =JSON.parse(localStorage.getItem(LS_INV)||'[]');
     internalTrades=JSON.parse(localStorage.getItem(LS_INTERNAL)||'[]');
+    auditLogs=JSON.parse(localStorage.getItem(LS_AUDIT)||'[]');
     const p=JSON.parse(localStorage.getItem(LS_PRODS)||'null');
     if(p) products=p;
     // 기존 invLogs에 company 없으면 AMT로 기본설정
@@ -1085,6 +1129,9 @@ function saveLS(){
   localStorage.setItem(LS_INV,JSON.stringify(invLogs));
   localStorage.setItem(LS_PRODS,JSON.stringify(products));
   localStorage.setItem(LS_INTERNAL,JSON.stringify(internalTrades));
+  // 감사 로그는 최근 500건만 유지
+  if(auditLogs.length>500) auditLogs=auditLogs.slice(-500);
+  localStorage.setItem(LS_AUDIT,JSON.stringify(auditLogs));
 }
 
 /* ═══ 기본 대리점 데이터 ═══ */
@@ -1374,6 +1421,7 @@ async function saveOrder(){
   };
 
   orders.push(order);
+  addAuditLog('create','발주',`${order.dealerName} ${order.product} ${fmt(order.qty)}개 ${fmt(order.total)}원 (발주일:${order.orderDate})`);
 
   // 자동 출고 — KY 재고에서 출고 (KY → 대리점)
   invLogs.push({
@@ -1566,6 +1614,7 @@ async function markDone(id){
   const o=orders.find(x=>x.id===id);
   if(!o) return;
   o.status='done'; o.collectedAt=today();
+  addAuditLog('status','수금',`수금완료: ${o.dealerName} ${o.product} ${fmt(o.total)}원 (수금예정일:${o.dueDate})`);
   saveLS();
   await fbSaveDoc('orders',id,o);
   toast('수금 완료 처리!','success');
@@ -1574,6 +1623,8 @@ async function markDone(id){
 
 async function delOrder(id){
   if(!confirm('이 발주를 삭제할까요?')) return;
+  const o=orders.find(x=>x.id===id);
+  if(o) addAuditLog('delete','발주',`삭제: ${o.dealerName} ${o.product} ${fmt(o.qty)}개 ${fmt(o.total)}원 (발주일:${o.orderDate})`,o);
   orders=orders.filter(o=>o.id!==id);
   invLogs=invLogs.filter(i=>i.relOrder!==id);
   saveLS();
@@ -1587,7 +1638,10 @@ function editOrderNote(id){
   if(!o) return;
   const memo=prompt('메모 수정:', o.memo||'');
   if(memo===null) return;
-  o.memo=memo; saveLS(); fbSaveDoc('orders',id,o);
+  const oldMemo=o.memo||'';
+  o.memo=memo;
+  addAuditLog('edit','발주',`메모 수정: ${o.dealerName} ${o.product} [${oldMemo||'없음'} → ${memo||'없음'}]`);
+  saveLS(); fbSaveDoc('orders',id,o);
   refreshAll();
 }
 
@@ -1717,6 +1771,7 @@ async function cancelDone(id){
   const o=orders.find(x=>x.id===id);
   if(!o) return;
   o.status='pending'; delete o.collectedAt;
+  addAuditLog('status','수금',`수금완료 취소: ${o.dealerName} ${o.product} ${fmt(o.total)}원`);
   saveLS(); await fbSaveDoc('orders',id,o);
   toast('수금완료 취소','info');
   refreshAll();
@@ -1874,6 +1929,7 @@ async function saveInv(){
 
   const item={id:'inv_'+Date.now(),date,product:prod,qty,type,company,memo,createdAt:new Date().toISOString()};
   invLogs.push(item);
+  addAuditLog('create','재고',`${item.company} ${item.product} ${item.type==='in'?'+':''}${item.qty}개 (${item.type==='in'?'입고':'출고'}) ${item.memo||''}`);
   saveLS();
   await fbSaveDoc('inv',item.id,item);
   toast('재고 업데이트!','success');
@@ -1980,6 +2036,7 @@ async function saveInternal(){
   await fbSaveDoc('inv',amtLog.id,amtLog);
   await fbSaveDoc('inv',kyLog.id,kyLog);
 
+  addAuditLog('create','내부거래',`AMT→KY ${product} ${fmt(qty)}개 ${fmt(total)}원 (${date})`);
   toast(`내부거래 저장 완료 ✓ AMT→KY ${product} ${fmt(qty)}개`,'success');
   document.getElementById('itMsg').textContent=`저장됨 · ${product} ${fmt(qty)}개 이전`;
   setTimeout(()=>document.getElementById('itMsg').textContent='',4000);
@@ -1992,6 +2049,8 @@ async function saveInternal(){
 
 async function deleteInternal(id){
   if(!confirm('이 내부거래를 삭제할까요? (관련 재고이력도 함께 삭제됩니다)')) return;
+  const t=internalTrades.find(x=>x.id===id);
+  if(t) addAuditLog('delete','내부거래',`삭제: ${t.product} ${fmt(t.qty)}개 ${fmt(t.total)}원 (${t.date})`,t);
   internalTrades=internalTrades.filter(t=>t.id!==id);
   invLogs=invLogs.filter(i=>i.relInternal!==id);
   saveLS();
@@ -2172,11 +2231,13 @@ async function saveDealer(){
 
   if(editingDealerId){
     const d=getDealerById(editingDealerId);
+    addAuditLog('edit','대리점',`수정: ${d.name} → ${name}`);
     Object.assign(d,{name,term,fee,note,products:prods});
     await fbSaveDoc('dealers',d.id,d);
   } else {
     const d={id:'d_'+Date.now(),name,term,fee,note,products:prods};
     dealers.push(d);
+    addAuditLog('create','대리점',`추가: ${name}`);
     await fbSaveDoc('dealers',d.id,d);
   }
 
@@ -2205,6 +2266,8 @@ async function deleteDealer(id){
   } else {
     if(!confirm('대리점을 삭제할까요?')) return;
   }
+  const dd=dealers.find(d=>d.id===id);
+  if(dd) addAuditLog('delete','대리점',`삭제: ${dd.name}`,dd);
   dealers=dealers.filter(d=>d.id!==id);
   saveLS();
   await fbDelDoc('dealers',id);
@@ -2420,6 +2483,63 @@ async function fbRestoreBackup(ds){
   }catch(e){ toast('복구 실패: '+e.message,'error'); }
 }
 
+/* ═══════════════════════════════════════════════════════
+   변경/삭제 감사 로그
+═══════════════════════════════════════════════════════ */
+function addAuditLog(action, category, detail, before=null){
+  const entry={
+    id:'al_'+Date.now(),
+    at: new Date().toISOString(),
+    action,    // 'create'|'edit'|'delete'|'status'
+    category,  // '발주'|'수금'|'재고'|'내부거래'|'대리점'
+    detail,    // 요약 문자열
+    before     // 삭제/수정 전 원본 (선택)
+  };
+  auditLogs.push(entry);
+}
+
+function renderAuditLog(){
+  const wrap=document.getElementById('auditLogWrap');
+  const listEl=document.getElementById('auditLogList');
+  wrap.style.display='block';
+
+  const catF=document.getElementById('auditCatFilter').value;
+  const actF=document.getElementById('auditActFilter').value;
+
+  let list=[...auditLogs].reverse(); // 최신순
+  if(catF) list=list.filter(l=>l.category===catF);
+  if(actF) list=list.filter(l=>l.action===actF);
+
+  if(!list.length){ listEl.innerHTML='<p style="color:var(--text2);font-size:.82rem;padding:8px">기록이 없습니다.</p>'; return; }
+
+  const actionLabel={create:'➕ 추가',edit:'✏️ 수정',delete:'🗑️ 삭제',status:'✅ 상태변경'};
+  const actionColor={create:'var(--green)',edit:'var(--blue)',delete:'var(--red)',status:'var(--yellow)'};
+
+  listEl.innerHTML=`<div class="table-wrap"><table>
+    <thead><tr><th>일시</th><th>분류</th><th>액션</th><th>내용</th></tr></thead>
+    <tbody>
+    ${list.slice(0,200).map(l=>{
+      const dt=new Date(l.at);
+      const dtStr=(dt.getMonth()+1)+'/'+(dt.getDate())+' '
+        +dt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+      return `<tr>
+        <td class="td-mono" style="font-size:.75rem;white-space:nowrap">${dtStr}</td>
+        <td><span class="badge badge-gray">${l.category}</span></td>
+        <td><span style="font-size:.78rem;font-weight:600;color:${actionColor[l.action]||'var(--text)'}">${actionLabel[l.action]||l.action}</span></td>
+        <td style="font-size:.78rem">${l.detail}${l.before?` <button class="btn btn-xs btn-ghost" style="font-size:.7rem;padding:1px 5px" onclick="showAuditBefore('${l.id}')">원본보기</button>`:''}</td>
+      </tr>`;
+    }).join('')}
+    </tbody>
+  </table></div>
+  <p style="font-size:.75rem;color:var(--text3);margin-top:6px">최근 ${list.length}건 표시 (전체 ${auditLogs.length}건)</p>`;
+}
+
+function showAuditBefore(id){
+  const log=auditLogs.find(l=>l.id===id);
+  if(!log||!log.before) return;
+  alert('삭제/수정 전 원본 데이터:\n\n'+JSON.stringify(log.before,null,2));
+}
+
 // 1년 이전 데이터 자동 삭제
 function purgeOldData(){
   const cutoff=new Date();
@@ -2443,7 +2563,7 @@ function purgeOldData(){
 async function fbSaveAll(){
   const fb=window._fb; if(!fb||!fb.ready) return;
   const now=new Date().toISOString();
-  const payload={ orders, invLogs, dealers, products, internalTrades, _updatedAt:now };
+  const payload={ orders, invLogs, dealers, products, internalTrades, auditLogs, _updatedAt:now };
   try{
     await fb.set(fb.ref(fb.db,'amt_data'), payload);
     setLastSync(now);
@@ -2499,6 +2619,7 @@ function _applyRemote(remote){
   if(remote.dealers) dealers=remote.dealers;
   if(remote.products) products=remote.products;
   if(remote.internalTrades) internalTrades=remote.internalTrades;
+  if(remote.auditLogs) auditLogs=remote.auditLogs;
   const now=remote._updatedAt||new Date().toISOString();
   localStorage.setItem('amt_updatedAt', now);
   saveLS();
@@ -2585,6 +2706,59 @@ function recTab(name,btn){
   document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('rec-tab-'+name).classList.add('active');
+}
+
+/* ═══════════════════════════════════════════════════════
+   비밀번호 동기화
+═══════════════════════════════════════════════════════ */
+// 비밀번호를 해시해서 Firebase 노드 키로 사용
+async function hashPassword(pw){
+  const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,32);
+}
+
+async function syncWithPassword(){
+  const pw=document.getElementById('syncPassword').value.trim();
+  if(!pw){ alert('비밀번호를 입력하세요'); return; }
+  const fb=window._fb; if(!fb||!fb.ready){ alert('Firebase 미연결'); return; }
+  const msg=document.getElementById('pwSyncMsg');
+  msg.textContent='업로드 중...';
+  try{
+    const key=await hashPassword(pw);
+    const now=new Date().toISOString();
+    const payload={ orders, invLogs, dealers, products, internalTrades, auditLogs, _updatedAt:now };
+    await fb.set(fb.ref(fb.db,'amt_pw/'+key), payload);
+    msg.textContent='✅ 업로드 완료! ('+new Date().toLocaleTimeString('ko-KR')+') — 다른 기기에서 같은 비밀번호로 가져오기 하세요.';
+    msg.style.color='var(--green)';
+  }catch(e){ msg.textContent='❌ 실패: '+e.message; msg.style.color='var(--red)'; }
+}
+
+async function loadWithPassword(){
+  const pw=document.getElementById('syncPassword').value.trim();
+  if(!pw){ alert('비밀번호를 입력하세요'); return; }
+  const fb=window._fb; if(!fb||!fb.ready){ alert('Firebase 미연결'); return; }
+  const msg=document.getElementById('pwSyncMsg');
+  msg.textContent='가져오는 중...';
+  try{
+    const key=await hashPassword(pw);
+    const snap=await fb.get(fb.ref(fb.db,'amt_pw/'+key));
+    if(!snap.exists()){ msg.textContent='❌ 해당 비밀번호의 데이터가 없습니다. 비밀번호를 확인하세요.'; msg.style.color='var(--red)'; return; }
+    const remote=snap.val();
+    const remoteTime=remote._updatedAt?new Date(remote._updatedAt).toLocaleString('ko-KR'):'알 수 없음';
+    if(!confirm(`비밀번호 데이터를 가져옵니다.\n저장 시각: ${remoteTime}\n\n현재 데이터는 먼저 백업됩니다. 계속하시겠습니까?`)) return;
+    await fbBackupToday(true);
+    if(remote.orders) orders=remote.orders;
+    if(remote.invLogs){ invLogs=remote.invLogs; invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; }); }
+    if(remote.dealers) dealers=remote.dealers;
+    if(remote.products) products=remote.products;
+    if(remote.internalTrades) internalTrades=remote.internalTrades;
+    if(remote.auditLogs) auditLogs=remote.auditLogs;
+    saveLS();
+    await fbSaveAll();
+    msg.textContent='✅ 가져오기 완료! (저장시각: '+remoteTime+')';
+    msg.style.color='var(--green)';
+    refreshAll();
+  }catch(e){ msg.textContent='❌ 실패: '+e.message; msg.style.color='var(--red)'; }
 }
 
 function closeRecModal(){ document.getElementById('recModal').classList.remove('open'); }
