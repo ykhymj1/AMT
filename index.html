@@ -773,7 +773,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
     <div id="recDayDetail" style="display:none" class="card">
       <div class="card-header">
         <div class="card-title" id="recDayTitle"></div>
-        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('recDayDetail').style.display='none'">✕ 닫기</button>
+        <button class="btn btn-ghost btn-sm" onclick="_openDayDetail=null;document.getElementById('recDayDetail').style.display='none'">✕ 닫기</button>
       </div>
       <div id="recDayList"></div>
     </div>
@@ -1037,6 +1037,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
    DATA MODEL & STORAGE
 ═══════════════════════════════════════════════════════ */
 let dealers = [];  // 대리점 마스터
+let _openDayDetail = null;  // 수금 캘린더 열린 날짜 유지용
 let orders  = [];  // 발주/매출
 let invLogs = [];  // 재고이력
 let internalTrades = []; // AMT→KY 내부거래
@@ -1652,12 +1653,14 @@ function renderRecCalendar(){
   </div>`+html;
 
   document.getElementById('recCalendar').innerHTML=html;
-  document.getElementById('recDayDetail').style.display='none';
+  // 이미 열린 날짜 상세가 있으면 유지(자동 닫힘 방지)
+  if(_openDayDetail) showDayDetail(_openDayDetail);
 }
 
 function showDayDetail(ds){
   const dayOrders=orders.filter(o=>o.dueDate===ds);
-  if(!dayOrders.length) return;
+  if(!dayOrders.length){ _openDayDetail=null; document.getElementById('recDayDetail').style.display='none'; return; }
+  _openDayDetail=ds;
   const t=today();
   document.getElementById('recDayTitle').textContent=`📅 ${ds} 수금 내역 (${dayOrders.length}건)`;
   document.getElementById('recDayList').innerHTML=`
@@ -1672,7 +1675,7 @@ function showDayDetail(ds){
         <td class="td-mono td-r">${o.fee?fmt(o.fee):'-'}</td>
         <td class="td-mono td-r" style="font-weight:700">${fmt(o.total+(o.fee||0))}</td>
         <td>${statusBadge(o)}</td>
-        <td>${o.status!=='done'?`<button class="btn btn-success btn-xs" onclick="markDone('${o.id}')">✓ 수금완료</button>`:
+        <td>${o.status!=='done'?`<button class="btn btn-xs" style="background:var(--red);color:#fff;border-color:var(--red)" onclick="markDone('${o.id}')">✓ 수금완료</button>`:
           `<button class="btn btn-ghost btn-xs" onclick="cancelDone('${o.id}')">취소</button>`}</td>
       </tr>`).join('')}
       </tbody>
