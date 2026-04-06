@@ -9,22 +9,23 @@
 
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, collection, doc, setDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getDatabase, ref, set, get, onValue, off } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   let savedCfg = {};
   try { savedCfg = JSON.parse(localStorage.getItem('amt_firebase_cfg') || '{}'); } catch(e){}
 
   let app, db, firebaseReady = false;
-  if (savedCfg.projectId) {
+  if (savedCfg.projectId && savedCfg.databaseURL) {
     try {
       app = initializeApp({ apiKey:savedCfg.apiKey||"", authDomain:savedCfg.authDomain||"",
         projectId:savedCfg.projectId||"", storageBucket:savedCfg.storageBucket||"",
-        messagingSenderId:savedCfg.messagingSenderId||"", appId:savedCfg.appId||"" });
-      db = getFirestore(app);
+        messagingSenderId:savedCfg.messagingSenderId||"", appId:savedCfg.appId||"",
+        databaseURL:savedCfg.databaseURL||"" });
+      db = getDatabase(app);
       firebaseReady = true;
     } catch(e){ console.warn('Firebase init failed',e); }
   }
-  window._fb = { db, collection, doc, setDoc, getDocs, deleteDoc, ready: firebaseReady };
+  window._fb = { db, ref, set, get, onValue, off, ready: firebaseReady };
 </script>
 
 <style>
@@ -935,6 +936,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
         <div class="form-group"><label>Storage Bucket</label><input id="fb_storageBucket" placeholder="xxx.appspot.com"></div>
         <div class="form-group"><label>Messaging Sender ID</label><input id="fb_messagingSenderId" placeholder="숫자"></div>
         <div class="form-group"><label>App ID</label><input id="fb_appId" placeholder="1:xxx:web:xxx"></div>
+        <div class="form-group" style="grid-column:1/-1"><label>🔴 Database URL <span style="color:var(--red);font-size:.75rem">★ 자동동기화 필수</span></label><input id="fb_databaseURL" placeholder="https://your-project-default-rtdb.asia-southeast1.firebasedatabase.app"></div>
       </div>
       <div style="margin-top:12px;display:flex;gap:8px">
         <button class="btn btn-primary" onclick="saveFbConfig()">💾 저장 (새로고침 필요)</button>
@@ -1064,6 +1066,8 @@ function loadLS(){
   }catch(e){resetDealers();}
 }
 function saveLS(){
+  const now=new Date().toISOString();
+  localStorage.setItem('amt_updatedAt', now);
   localStorage.setItem(LS_DEALERS,JSON.stringify(dealers));
   localStorage.setItem(LS_ORDERS,JSON.stringify(orders));
   localStorage.setItem(LS_INV,JSON.stringify(invLogs));
@@ -1215,12 +1219,10 @@ function init(){
   const cm=curMonth;
   ['ofMonth','rfMonth','invFilterM','itFilterM'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=cm; });
 
-  // Firebase
+  // Firebase 자동 동기화
   const fb=window._fb;
   if(fb&&fb.ready){
-    document.getElementById('syncDot').classList.remove('off');
-    document.getElementById('syncLabel').textContent='Firebase';
-    fbSync();
+    fbSync().then(()=>fbStartListener());
   }
 
   refreshAll();
@@ -2280,46 +2282,107 @@ function renderReport(){
 ═══════════════════════════════════════════════════════ */
 function loadFbConfig(){
   const cfg=JSON.parse(localStorage.getItem('amt_firebase_cfg')||'{}');
-  ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'].forEach(k=>{
+  ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId','databaseURL'].forEach(k=>{
     const el=document.getElementById('fb_'+k); if(el&&cfg[k]) el.value=cfg[k];
   });
 }
 
 function saveFbConfig(){
   const cfg={};
-  ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId'].forEach(k=>{
+  ['apiKey','authDomain','projectId','storageBucket','messagingSenderId','appId','databaseURL'].forEach(k=>{
     cfg[k]=document.getElementById('fb_'+k).value;
   });
   localStorage.setItem('amt_firebase_cfg',JSON.stringify(cfg));
   toast('Firebase 설정 저장! 새로고침 후 적용됩니다.','success');
 }
 
-async function fbSaveDoc(col,id,data){
+/* ─── Realtime Database 자동 동기화 ─── */
+let _fbListener = null;  // 실시간 리스너 핸들
+
+// 전체 데이터를 단일 노드에 저장 (타임스탬프 포함)
+async function fbSaveAll(){
   const fb=window._fb; if(!fb||!fb.ready) return;
-  try{ await fb.setDoc(fb.doc(fb.db,col,id),data); }catch(e){ console.warn('FB save err',e); }
-}
-async function fbDelDoc(col,id){
-  const fb=window._fb; if(!fb||!fb.ready) return;
-  try{ await fb.deleteDoc(fb.doc(fb.db,col,id)); }catch(e){}
+  const now=new Date().toISOString();
+  const payload={ orders, invLogs, dealers, products, internalTrades, _updatedAt:now };
+  try{
+    await fb.set(fb.ref(fb.db,'amt_data'), payload);
+    setLastSync(now);
+  }catch(e){ console.warn('FB save err',e); }
 }
 
+// 개별 호출 래퍼 (기존 코드 호환 유지 - 실제로는 전체 저장)
+async function fbSaveDoc(col,id,data){
+  // 데이터는 이미 메모리에 반영된 상태이므로 전체 저장
+  await fbSaveAll();
+}
+async function fbDelDoc(col,id){
+  await fbSaveAll();
+}
+
+// 마지막 동기화 시각 표시
+function setLastSync(isoStr){
+  const d=new Date(isoStr);
+  const hm=d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+  const md=(d.getMonth()+1)+'/'+(d.getDate());
+  document.getElementById('syncLabel').textContent='동기화 '+md+' '+hm;
+  document.getElementById('syncDot').classList.remove('off');
+  document.getElementById('syncDot').classList.add('pulse');
+  setTimeout(()=>document.getElementById('syncDot').classList.remove('pulse'),3000);
+}
+
+// 수동 동기화 (한 번 fetch + 최신 판정)
 async function fbSync(){
-  const fb=window._fb; if(!fb||!fb.ready){ toast('Firebase 미연결','error'); return; }
+  const fb=window._fb; if(!fb||!fb.ready){ toast('Firebase 미연결 - 설정 탭에서 Database URL 확인','error'); return; }
   try{
-    const [os,is,ds,its]=[
-      await fb.getDocs(fb.collection(fb.db,'orders')),
-      await fb.getDocs(fb.collection(fb.db,'inv')),
-      await fb.getDocs(fb.collection(fb.db,'dealers')),
-      await fb.getDocs(fb.collection(fb.db,'internal'))
-    ];
-    if(os.docs.length) orders=os.docs.map(d=>d.data());
-    if(is.docs.length){ invLogs=is.docs.map(d=>d.data()); invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; }); }
-    if(ds.docs.length) dealers=ds.docs.map(d=>d.data());
-    if(its.docs.length) internalTrades=its.docs.map(d=>d.data());
-    saveLS();
-    toast('Firebase 동기화 완료!','success');
+    const snap=await fb.get(fb.ref(fb.db,'amt_data'));
+    if(!snap.exists()){ toast('서버에 데이터 없음 - 현재 로컬 데이터를 업로드합니다','info'); await fbSaveAll(); return; }
+    const remote=snap.val();
+    const remoteTime=remote._updatedAt||'';
+    const localTime=localStorage.getItem('amt_updatedAt')||'';
+    if(!localTime || remoteTime > localTime){
+      // 서버가 더 최신
+      _applyRemote(remote);
+      toast('✅ 서버 최신 데이터로 동기화 완료 ('+new Date(remoteTime).toLocaleTimeString('ko-KR')+')','success');
+    } else {
+      // 로컬이 더 최신 → 서버에 업로드
+      await fbSaveAll();
+      toast('✅ 로컬 최신 데이터를 서버에 업로드 완료','success');
+    }
     refreshAll();
   }catch(e){ toast('동기화 실패: '+e.message,'error'); }
+}
+
+// 서버 데이터를 로컬에 적용
+function _applyRemote(remote){
+  if(remote.orders) orders=remote.orders;
+  if(remote.invLogs){ invLogs=remote.invLogs; invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; }); }
+  if(remote.dealers) dealers=remote.dealers;
+  if(remote.products) products=remote.products;
+  if(remote.internalTrades) internalTrades=remote.internalTrades;
+  const now=remote._updatedAt||new Date().toISOString();
+  localStorage.setItem('amt_updatedAt', now);
+  saveLS();
+  setLastSync(now);
+}
+
+// 실시간 리스너 등록 (다른 기기 변경사항 자동 수신)
+function fbStartListener(){
+  const fb=window._fb; if(!fb||!fb.ready) return;
+  if(_fbListener) return; // 이미 등록됨
+  let firstCall=true;
+  _fbListener = fb.onValue(fb.ref(fb.db,'amt_data'), (snap)=>{
+    if(firstCall){ firstCall=false; return; } // 최초 호출(현재값)은 fbSync에서 처리
+    if(!snap.exists()) return;
+    const remote=snap.val();
+    const remoteTime=remote._updatedAt||'';
+    const localTime=localStorage.getItem('amt_updatedAt')||'';
+    if(remoteTime > localTime){
+      // 다른 기기에서 변경됨
+      _applyRemote(remote);
+      refreshAll();
+      toast('📱 다른 기기에서 데이터가 업데이트되었습니다','info');
+    }
+  });
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -2428,6 +2491,13 @@ function handleResize(){
   // handled by CSS
 }
 window.addEventListener('resize',handleResize);
+// 화면 복귀(탭 전환, 폰 화면 켜기) 시 자동 동기화
+document.addEventListener('visibilitychange',()=>{
+  if(document.visibilityState==='visible'){
+    const fb=window._fb;
+    if(fb&&fb.ready) fbSync();
+  }
+});
 
 // START
 window.addEventListener('DOMContentLoaded',()=>{ init(); handleResize(); });
