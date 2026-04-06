@@ -1529,9 +1529,12 @@ function renderDash(){
   const t=ymd();
 
   const moOrders=orders.filter(o=>(o.orderDate||'').startsWith(mo));
+  // 수금완료: 실제 입금일(collectedAt) 기준 이번달 입금된 건
   const doneOrders=orders.filter(o=>o.status==='done' && ym(o.collectedAt||o.dueDate)===mo);
-  const overdueMonthOrders=orders.filter(o=>o.status!=='done' && (o.dueDate||'').startsWith(mo) && o.dueDate<t);
-  const upcomingMonthOrders=orders.filter(o=>o.status!=='done' && (o.dueDate||'').startsWith(mo) && o.dueDate>=t);
+  // 미수금: 원래 입금예정일(originalDueDate 우선, 없으면 dueDate)이 이번달이고, 오늘 기준 경과, 미수금 상태
+  const effDue=o=>(o.originalDueDate||o.dueDate||'');
+  const overdueMonthOrders=orders.filter(o=>o.status!=='done' && effDue(o).startsWith(mo) && effDue(o)<t);
+  const upcomingMonthOrders=orders.filter(o=>o.status!=='done' && effDue(o).startsWith(mo) && effDue(o)>=t);
   const allPending=orders.filter(o=>o.status!=='done');
 
   const totalSales=moOrders.reduce((s,o)=>s+orderAmount(o),0);
@@ -2453,17 +2456,33 @@ async function deleteDealer(id){
 function renderReport(){
   const mo=document.getElementById('rptMonth').value||rptMon;
   rptMon=mo;
-  const mo_orders=orders.filter(o=>o.orderDate.startsWith(mo));
+  const t=ymd();
 
-  const totalSales=mo_orders.reduce((s,o)=>s+o.total+(o.fee||0),0);
-  const collected=mo_orders.filter(o=>o.status==='done').reduce((s,o)=>s+o.total+(o.fee||0),0);
-  const totalQty=mo_orders.reduce((s,o)=>s+o.qty,0);
+  // 이번달 발주 기준 총매출
+  const mo_orders=orders.filter(o=>o.orderDate.startsWith(mo));
+  const totalSales=mo_orders.reduce((s,o)=>s+orderAmount(o),0);
+
+  // 수금완료: 실제 입금일(collectedAt) 기준 이번달 입금된 건
+  const collected=orders.filter(o=>o.status==='done' && ym(o.collectedAt||o.dueDate)===mo)
+                        .reduce((s,o)=>s+orderAmount(o),0);
+
+  // 미수금: 원래 입금예정일(originalDueDate 우선)이 이번달이고 경과된 미수금
+  const effDue=o=>(o.originalDueDate||o.dueDate||'');
+  const pending=orders.filter(o=>o.status!=='done' && effDue(o).startsWith(mo) && effDue(o)<t)
+                      .reduce((s,o)=>s+orderAmount(o),0);
+
+  // 제품별 수량
+  const prodQty={};
+  products.forEach(p=>{ prodQty[p]=0; });
+  mo_orders.forEach(o=>{ if(prodQty[o.product]!==undefined) prodQty[o.product]+=(Number(o.qty)||0); });
+  const prodQtyText=products.filter(p=>prodQty[p]>0).map(p=>`${p} ${fmt(prodQty[p])}개`).join(' · ')||'없음';
+  const totalQty=mo_orders.reduce((s,o)=>s+(Number(o.qty)||0),0);
 
   document.getElementById('rptKpi').innerHTML=`
-    <div class="kpi" style="--kpi-color:var(--blue)"><div class="kpi-label">총 매출</div><div class="kpi-value">${fmt(totalSales)}</div><div class="kpi-sub">원</div></div>
-    <div class="kpi" style="--kpi-color:var(--green)"><div class="kpi-label">수금완료</div><div class="kpi-value">${fmt(collected)}</div><div class="kpi-sub">원</div></div>
-    <div class="kpi" style="--kpi-color:var(--yellow)"><div class="kpi-label">미수금</div><div class="kpi-value">${fmt(totalSales-collected)}</div><div class="kpi-sub">원</div></div>
-    <div class="kpi" style="--kpi-color:var(--gray)"><div class="kpi-label">총 수량</div><div class="kpi-value">${fmt(totalQty)}</div><div class="kpi-sub">개</div></div>
+    <div class="kpi" style="--kpi-color:var(--blue)"><div class="kpi-label">총 매출</div><div class="kpi-value">${fmt(totalSales)}</div><div class="kpi-sub">이번달 발주 금액 기준 · 원</div></div>
+    <div class="kpi" style="--kpi-color:var(--green)"><div class="kpi-label">수금완료</div><div class="kpi-value">${fmt(collected)}</div><div class="kpi-sub">이번달 실제 입금 금액 · 원</div></div>
+    <div class="kpi" style="--kpi-color:var(--yellow)"><div class="kpi-label">미수금</div><div class="kpi-value">${fmt(pending)}</div><div class="kpi-sub">이번달 입금예정일 경과 미입금 · 원</div></div>
+    <div class="kpi" style="--kpi-color:var(--gray)"><div class="kpi-label">총 수량</div><div class="kpi-value">${fmt(totalQty)}</div><div class="kpi-sub">${prodQtyText}</div></div>
   `;
 
   // 대리점별
@@ -2513,14 +2532,19 @@ function renderReport(){
       <thead><tr><th>월</th><th>발주건수</th><th>총매출</th><th>수금완료</th><th>미수금</th></tr></thead>
       <tbody>${allMonths.map(m=>{
         const mOrders=orders.filter(o=>ym(o.orderDate)===m);
-        const tot=mOrders.reduce((s,o)=>s+o.total+(o.fee||0),0);
-        const col=mOrders.filter(o=>o.status==='done').reduce((s,o)=>s+o.total+(o.fee||0),0);
+        const tot=mOrders.reduce((s,o)=>s+orderAmount(o),0);
+        // 수금완료: 실제 입금일(collectedAt) 기준 해당 월 입금분
+        const col=orders.filter(o=>o.status==='done' && ym(o.collectedAt||o.dueDate)===m)
+                        .reduce((s,o)=>s+orderAmount(o),0);
+        // 미수금: 원래 예정일(originalDueDate 우선)이 해당 월이고 미수금인 건
+        const pen=orders.filter(o=>o.status!=='done' && (o.originalDueDate||o.dueDate||'').startsWith(m))
+                        .reduce((s,o)=>s+orderAmount(o),0);
         return `<tr ${m===mo?'style="background:var(--blue-light);font-weight:700"':''}>
           <td class="td-mono">${m.replace('-','년 ')}월</td>
           <td class="td-mono td-r">${mOrders.length}</td>
           <td class="td-mono td-r">${fmt(tot)}</td>
           <td class="td-mono td-r" style="color:var(--green)">${fmt(col)}</td>
-          <td class="td-mono td-r" style="color:var(--yellow)">${fmt(tot-col)}</td>
+          <td class="td-mono td-r" style="color:var(--yellow)">${fmt(pen)}</td>
         </tr>`;
       }).join('')}</tbody>
     </table></div>`;
