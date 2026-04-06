@@ -1224,18 +1224,29 @@ function resetDealers(){
 /* ═══════════════════════════════════════════════════════
    DATE UTILS
 ═══════════════════════════════════════════════════════ */
-function eom(y,m){ return new Date(y,m,0).toISOString().slice(0,10); }
-function addDays(ds,n){ const d=new Date(ds); d.setDate(d.getDate()+n); return d.toISOString().slice(0,10); }
-function ym(ds){ return ds.slice(0,7); }
-function ymd(){ return new Date().toISOString().slice(0,10); }
+function pad2(n){ return String(n).padStart(2,'0'); }
+function fmtDateLocal(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`; }
+function fmtMonthLocal(d){ return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`; }
+function parseDateLocal(ds){
+  if(!ds) return new Date(NaN);
+  const parts=String(ds).split('-').map(Number);
+  const y=parts[0], m=parts[1]||1, day=parts[2]||1;
+  return new Date(y,m-1,day);
+}
+function monthStr(d=new Date()){ return fmtMonthLocal(d); }
+function eom(y,m){ return fmtDateLocal(new Date(y,m,0)); }
+function addDays(ds,n){ const d=parseDateLocal(ds); d.setDate(d.getDate()+n); return fmtDateLocal(d); }
+function ym(ds){ return String(ds||'').slice(0,7); }
+function ymd(){ return fmtDateLocal(new Date()); }
+function orderAmount(o){ return (Number(o&&o.total)||0) + (Number(o&&o.fee)||0); }
 
 function calcDue(orderDate, term, dealerId){
-  const d=new Date(orderDate);
+  const d=parseDateLocal(orderDate);
   const y=d.getFullYear(), m=d.getMonth()+1;
   if(dealerId==='chungu'||term==='3m_19'){
-    const due=new Date(orderDate);
+    const due=parseDateLocal(orderDate);
     due.setMonth(due.getMonth()+3); due.setDate(19);
-    return due.toISOString().slice(0,10);
+    return fmtDateLocal(due);
   }
   switch(term){
     case 'same':      return orderDate;
@@ -1259,9 +1270,9 @@ function today(){ return ymd(); }
 /* ═══════════════════════════════════════════════════════
    MONTH STATE
 ═══════════════════════════════════════════════════════ */
-let curMonth  = new Date().toISOString().slice(0,7);
-let recCalMon = new Date().toISOString().slice(0,7);
-let rptMon    = new Date().toISOString().slice(0,7);
+let curMonth  = monthStr();
+let recCalMon = monthStr();
+let rptMon    = monthStr();
 
 function setMonth(v){ curMonth=v; }
 function _ensureMonthOption(selId, mo){
@@ -1280,23 +1291,23 @@ function _ensureMonthOption(selId, mo){
 function chMonth(d){
   const [y,m]=curMonth.split('-').map(Number);
   const nd=new Date(y,m-1+d,1);
-  curMonth=nd.toISOString().slice(0,7);
+  curMonth=fmtMonthLocal(nd);
   _ensureMonthOption('dashMonth', curMonth);
   document.getElementById('dashMonth').value=curMonth;
   renderDash();
 }
-function goToday(){ curMonth=new Date().toISOString().slice(0,7); _ensureMonthOption('dashMonth',curMonth); renderDash(); }
+function goToday(){ curMonth=monthStr(); _ensureMonthOption('dashMonth',curMonth); renderDash(); }
 
 function chRecMonth(d){
   const [y,m]=recCalMon.split('-').map(Number);
   const nd=new Date(y,m-1+d,1);
-  recCalMon=nd.toISOString().slice(0,7);
+  recCalMon=fmtMonthLocal(nd);
   _ensureMonthOption('recCalMonth', recCalMon);
   document.getElementById('recCalMonth').value=recCalMon;
   renderRecCalendar();
 }
 function goRecToday(){
-  recCalMon=new Date().toISOString().slice(0,7);
+  recCalMon=monthStr();
   _ensureMonthOption('recCalMonth', recCalMon);
   renderRecCalendar();
 }
@@ -1304,7 +1315,7 @@ function goRecToday(){
 function chRptMonth(d){
   const [y,m]=rptMon.split('-').map(Number);
   const nd=new Date(y,m-1+d,1);
-  rptMon=nd.toISOString().slice(0,7);
+  rptMon=fmtMonthLocal(nd);
   document.getElementById('rptMonth').value=rptMon;
   renderReport();
 }
@@ -1318,7 +1329,10 @@ function init(){
 
   // 월 드롭다운 채우기
   const months=[];
-  for(let y=2024;y<=2032;y++) for(let m=1;m<=12;m++) months.push(`${y}-${String(m).padStart(2,'0')}`);
+  const nowYear=new Date().getFullYear();
+  const startYear=Math.min(2024, nowYear-2);
+  const endYear=Math.max(2035, nowYear+5);
+  for(let y=startYear;y<=endYear;y++) for(let m=1;m<=12;m++) months.push(`${y}-${String(m).padStart(2,'0')}`);
 
   ['dashMonth','recCalMonth','rptMonth'].forEach(id=>{
     const el=document.getElementById(id);
@@ -1511,42 +1525,53 @@ async function saveOrder(){
 ═══════════════════════════════════════════════════════ */
 function renderDash(){
   const mo=document.getElementById('dashMonth').value||curMonth;
-  const mo_orders=orders.filter(o=>o.orderDate.startsWith(mo));
+  curMonth=mo;
   const t=ymd();
 
-  const totalSales=mo_orders.reduce((s,o)=>s+o.total+(o.fee||0),0);
-  const collected=mo_orders.filter(o=>o.status==='done').reduce((s,o)=>s+o.total+(o.fee||0),0);
-  const pending=totalSales-collected;
-  const cnt=mo_orders.length;
+  const moOrders=orders.filter(o=>(o.orderDate||'').startsWith(mo));
+  const doneOrders=orders.filter(o=>o.status==='done' && ym(o.collectedAt||o.dueDate)===mo);
+  const overdueMonthOrders=orders.filter(o=>o.status!=='done' && (o.dueDate||'').startsWith(mo) && o.dueDate<t);
+  const upcomingMonthOrders=orders.filter(o=>o.status!=='done' && (o.dueDate||'').startsWith(mo) && o.dueDate>=t);
+  const allPending=orders.filter(o=>o.status!=='done');
+
+  const totalSales=moOrders.reduce((s,o)=>s+orderAmount(o),0);
+  const collected=doneOrders.reduce((s,o)=>s+orderAmount(o),0);
+  const pending=overdueMonthOrders.reduce((s,o)=>s+orderAmount(o),0);
+  const cnt=moOrders.length;
 
   const prodSales={};
-  products.forEach(p=>{ prodSales[p]={qty:0,total:0}; });
-  mo_orders.forEach(o=>{
-    if(prodSales[o.product]){ prodSales[o.product].qty+=o.qty; prodSales[o.product].total+=o.total; }
+  products.forEach(p=>{ prodSales[p]={qty:0,total:0,cnt:0}; });
+  moOrders.forEach(o=>{
+    if(prodSales[o.product]){
+      prodSales[o.product].qty+=(Number(o.qty)||0);
+      prodSales[o.product].total+=orderAmount(o);
+      prodSales[o.product].cnt+=1;
+    }
   });
 
   const pColors={'JUC':'var(--juc)','MEDIAS':'var(--medias)','DELL':'var(--dell)'};
+  const prodCountText=products.map(p=>`${p} ${fmt((prodSales[p]&&prodSales[p].cnt)||0)}건`).join(' · ');
 
   document.getElementById('dashKpi').innerHTML=`
     <div class="kpi" style="--kpi-color:var(--blue)">
       <div class="kpi-label">이달 총 매출</div>
       <div class="kpi-value">${fmt(totalSales)}</div>
-      <div class="kpi-sub">원 (VAT포함)</div>
+      <div class="kpi-sub">이번달 발주 금액 기준 · 원 (VAT포함)</div>
     </div>
     <div class="kpi" style="--kpi-color:var(--green)">
       <div class="kpi-label">수금 완료</div>
       <div class="kpi-value">${fmt(collected)}</div>
-      <div class="kpi-sub">원</div>
+      <div class="kpi-sub">이번달 실제 입금 금액 · 원</div>
     </div>
     <div class="kpi" style="--kpi-color:var(--yellow)">
       <div class="kpi-label">미 수금</div>
       <div class="kpi-value">${fmt(pending)}</div>
-      <div class="kpi-sub">원</div>
+      <div class="kpi-sub">이번달 입금예정일 경과 미입금 · 원</div>
     </div>
     <div class="kpi" style="--kpi-color:var(--gray)">
       <div class="kpi-label">발주 건수</div>
-      <div class="kpi-value">${cnt}</div>
-      <div class="kpi-sub">건</div>
+      <div class="kpi-value">${fmt(cnt)}</div>
+      <div class="kpi-sub">${prodCountText}</div>
     </div>
     ${products.map(p=>{
       const amtQty=calcStock(p,'AMT');
@@ -1559,19 +1584,15 @@ function renderDash(){
     }).join('')}
   `;
 
-  // 미수금
-  const allPending=orders.filter(o=>o.status!=='done');
-  const overdue=allPending.filter(o=>o.dueDate<t);
-  const upcoming=allPending.filter(o=>o.dueDate>=t&&o.dueDate.startsWith(mo));
   document.getElementById('dashReceivable').innerHTML=`
     <div style="display:flex;flex-direction:column;gap:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--red-light);border-radius:6px">
-        <span style="font-size:.8rem;color:var(--red);font-weight:600">⚠ 미수</span>
-        <span style="font-family:'JetBrains Mono',monospace;color:var(--red);font-weight:700">${fmt(overdue.reduce((s,o)=>s+o.total+(o.fee||0),0))}원</span>
+        <span style="font-size:.8rem;color:var(--red);font-weight:600">⚠ 이번달 미수금</span>
+        <span style="font-family:'JetBrains Mono',monospace;color:var(--red);font-weight:700">${fmt(pending)}원</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--yellow-light);border-radius:6px">
-        <span style="font-size:.8rem;color:var(--yellow);font-weight:600">이달 예정</span>
-        <span style="font-family:'JetBrains Mono',monospace;color:var(--yellow);font-weight:700">${fmt(upcoming.reduce((s,o)=>s+o.total+(o.fee||0),0))}원</span>
+        <span style="font-size:.8rem;color:var(--yellow);font-weight:600">이번달 입금예정</span>
+        <span style="font-family:'JetBrains Mono',monospace;color:var(--yellow);font-weight:700">${fmt(upcomingMonthOrders.reduce((s,o)=>s+orderAmount(o),0))}원</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--gray-light);border-radius:6px">
         <span style="font-size:.8rem;color:var(--text2);font-weight:600">전체 미수금 건수</span>
@@ -1584,7 +1605,7 @@ function renderDash(){
   const totalAll=Object.values(prodSales).reduce((s,v)=>s+v.total,0)||1;
   document.getElementById('dashProduct').innerHTML=`<div style="display:flex;flex-direction:column;gap:10px">
     ${products.map(p=>{
-      const s=prodSales[p]||{qty:0,total:0};
+      const s=prodSales[p]||{qty:0,total:0,cnt:0};
       const pct=Math.round(s.total/totalAll*100);
       const c=pColors[p]||'var(--gray)';
       return `<div>
@@ -1593,13 +1614,13 @@ function renderDash(){
           <span style="font-size:.8rem;font-family:'JetBrains Mono',monospace">${fmt(s.total)}원</span>
         </div>
         <div class="progress"><div class="progress-fill" style="width:${pct}%;background:${c}"></div></div>
-        <div style="font-size:.68rem;color:var(--text2);font-weight:600;margin-top:2px">${fmt(s.qty)}개 · ${pct}%</div>
+        <div style="font-size:.68rem;color:var(--text2);font-weight:600;margin-top:2px">${fmt(s.cnt)}건 · ${fmt(s.qty)}개 · ${pct}%</div>
       </div>`;
     }).join('')}
   </div>`;
 
   // 이달 발주
-  const recents=[...mo_orders].sort((a,b)=>b.orderDate.localeCompare(a.orderDate));
+  const recents=[...moOrders].sort((a,b)=>b.orderDate.localeCompare(a.orderDate));
   document.getElementById('dashOrders').innerHTML=renderOrderTableHtml(recents,true);
 }
 
@@ -1741,11 +1762,12 @@ async function confirmMarkDone(id){
 
   o.status='done';
   o.collectedAt=collectedDate;
-  // 실제 수금일이 예정일과 다르면 수금예정일도 실제 수금일로 업데이트
   if(collectedDate !== oldDueDate){
+    if(!o.originalDueDate) o.originalDueDate=oldDueDate;
     o.dueDate=collectedDate;
     addAuditLog('status','수금',`수금완료: ${o.dealerName} ${o.product} ${fmt(o.total)}원 (예정일:${oldDueDate} → 실제수금일:${collectedDate})`);
   } else {
+    delete o.originalDueDate;
     addAuditLog('status','수금',`수금완료: ${o.dealerName} ${o.product} ${fmt(o.total)}원 (수금일:${collectedDate})`);
   }
 
@@ -1905,8 +1927,15 @@ function quickToggle(id,e){
 async function cancelDone(id){
   const o=orders.find(x=>x.id===id);
   if(!o) return;
-  if(!confirm(`수금을 취소하시겠습니까?\n\n대리점: ${o.dealerName}\n제품: ${o.product} ${fmt(o.qty)}개\n금액: ${fmt(o.total+(o.fee||0))}원`)) return;
-  o.status='pending'; delete o.collectedAt;
+  if(!confirm(`수금을 취소하시겠습니까?
+
+대리점: ${o.dealerName}
+제품: ${o.product} ${fmt(o.qty)}개
+금액: ${fmt(o.total+(o.fee||0))}원`)) return;
+  o.status='pending';
+  if(o.originalDueDate) o.dueDate=o.originalDueDate;
+  delete o.collectedAt;
+  delete o.originalDueDate;
   addAuditLog('status','수금',`수금완료 취소: ${o.dealerName} ${o.product} ${fmt(o.total)}원`);
   saveLS(); await fbSaveDoc('orders',id,o);
   toast('수금 취소 처리','info');
