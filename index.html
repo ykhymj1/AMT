@@ -784,7 +784,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
   <div class="tab-pane" id="rec-tab-list">
     <div class="filter-bar" style="margin-bottom:14px">
       <div class="filter-group">
-        <label>기준월</label>
+        <label>수금예정월</label>
         <input type="month" id="rfMonth" onchange="renderRecList()">
       </div>
       <div class="filter-group">
@@ -1239,24 +1239,6 @@ function addDays(ds,n){ const d=parseDateLocal(ds); d.setDate(d.getDate()+n); re
 function ym(ds){ return String(ds||'').slice(0,7); }
 function ymd(){ return fmtDateLocal(new Date()); }
 function orderAmount(o){ return (Number(o&&o.total)||0) + (Number(o&&o.fee)||0); }
-function effectiveDueDate(o){ return String((o&&((o.originalDueDate)||o.dueDate))||'').slice(0,10); }
-function actualCollectedDate(o){
-  if(o&&o.collectedAt) return String(o.collectedAt).slice(0,10);
-  if(o&&o.status==='done'&&o.dueDate) return String(o.dueDate).slice(0,10); // 기존 데이터 호환
-  return '';
-}
-function receivableDisplayDate(o){
-  return o&&o.status==='done' ? (actualCollectedDate(o)||effectiveDueDate(o)) : effectiveDueDate(o);
-}
-function isCollectedInMonth(o, mo){ return !!(o&&o.status==='done'&&ym(actualCollectedDate(o))===mo); }
-function isOverdueInMonth(o, mo, baseDate=today()){
-  const due=effectiveDueDate(o);
-  return !!(o&&o.status!=='done'&&due.startsWith(mo)&&due<baseDate);
-}
-function isUpcomingInMonth(o, mo, baseDate=today()){
-  const due=effectiveDueDate(o);
-  return !!(o&&o.status!=='done'&&due.startsWith(mo)&&due>=baseDate);
-}
 
 function calcDue(orderDate, term, dealerId){
   const d=parseDateLocal(orderDate);
@@ -1547,9 +1529,12 @@ function renderDash(){
   const t=ymd();
 
   const moOrders=orders.filter(o=>(o.orderDate||'').startsWith(mo));
-  const doneOrders=orders.filter(o=>isCollectedInMonth(o, mo));
-  const overdueMonthOrders=orders.filter(o=>isOverdueInMonth(o, mo, t));
-  const upcomingMonthOrders=orders.filter(o=>isUpcomingInMonth(o, mo, t));
+  // 수금완료: 실제 입금일(collectedAt) 기준 이번달 입금된 건
+  const doneOrders=orders.filter(o=>o.status==='done' && ym(o.collectedAt||o.dueDate)===mo);
+  // 미수금: 원래 입금예정일(originalDueDate 우선, 없으면 dueDate)이 이번달이고, 오늘 기준 경과, 미수금 상태
+  const effDue=o=>(o.originalDueDate||o.dueDate||'');
+  const overdueMonthOrders=orders.filter(o=>o.status!=='done' && effDue(o).startsWith(mo) && effDue(o)<t);
+  const upcomingMonthOrders=orders.filter(o=>o.status!=='done' && effDue(o).startsWith(mo) && effDue(o)>=t);
   const allPending=orders.filter(o=>o.status!=='done');
 
   const totalSales=moOrders.reduce((s,o)=>s+orderAmount(o),0);
@@ -1619,6 +1604,7 @@ function renderDash(){
     </div>
   `;
 
+  // 제품별
   const totalAll=Object.values(prodSales).reduce((s,v)=>s+v.total,0)||1;
   document.getElementById('dashProduct').innerHTML=`<div style="display:flex;flex-direction:column;gap:10px">
     ${products.map(p=>{
@@ -1636,6 +1622,7 @@ function renderDash(){
     }).join('')}
   </div>`;
 
+  // 이달 발주
   const recents=[...moOrders].sort((a,b)=>b.orderDate.localeCompare(a.orderDate));
   document.getElementById('dashOrders').innerHTML=renderOrderTableHtml(recents,true);
 }
@@ -1827,11 +1814,11 @@ function renderRecCalendar(){
   const [y,m]=mo.split('-').map(Number);
   const t=today();
 
-  const moOrders=orders.filter(o=>receivableDisplayDate(o).startsWith(mo));
-  const pendingMonthOrders=orders.filter(o=>o.status!=='done' && effectiveDueDate(o).startsWith(mo));
-  const doneMonthOrders=orders.filter(o=>isCollectedInMonth(o, mo));
+  // 이 달 수금예정 발주
+  const moOrders=orders.filter(o=>o.dueDate.startsWith(mo));
 
-  const firstDay=new Date(y,m-1,1).getDay();
+  // 달력 그리기
+  const firstDay=new Date(y,m-1,1).getDay(); // 0=일
   const daysInMonth=new Date(y,m,0).getDate();
   const prevMonthDays=new Date(y,m-1,0).getDate();
 
@@ -1839,6 +1826,7 @@ function renderRecCalendar(){
   const dayNames=['일','월','화','수','목','금','토'];
   dayNames.forEach(d=>{ html+=`<div class="cal-head">${d}</div>`; });
 
+  // 이전달 날짜
   for(let i=firstDay-1;i>=0;i--){
     const day=prevMonthDays-i;
     html+=`<div class="cal-cell other-month"><div class="cal-day">${day}</div></div>`;
@@ -1846,9 +1834,9 @@ function renderRecCalendar(){
 
   for(let day=1;day<=daysInMonth;day++){
     const ds=`${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    const dayOrders=moOrders.filter(o=>receivableDisplayDate(o)===ds);
+    const dayOrders=moOrders.filter(o=>o.dueDate===ds);
     const isToday=ds===t;
-    const hasOverdue=dayOrders.some(o=>o.status!=='done' && effectiveDueDate(o)<t);
+    const hasOverdue=dayOrders.some(o=>o.status!=='done'&&o.dueDate<t);
     const hasDue=dayOrders.some(o=>o.status!=='done');
     const dow=(firstDay+day-1)%7;
     const color=dow===0?'color:var(--red)':dow===6?'color:var(--blue)':'';
@@ -1859,9 +1847,9 @@ function renderRecCalendar(){
     else if(hasDue) cls+=' has-due';
 
     const items=dayOrders.slice(0,3).map(o=>{
-      const ov=o.status!=='done' && effectiveDueDate(o)<t;
+      const ov=o.status!=='done'&&o.dueDate<t;
       const ic=o.status==='done'?'done':ov?'overdue':'pending';
-      return `<div class="cal-item ${ic}" title="${o.dealerName} ${o.product} ${fmt(orderAmount(o))}원" onclick="quickToggle('${o.id}',event)">${o.dealerName.slice(0,5)} ${prodBadge(o.product).replace(/ badge-\w+/,'').replace('class="badge','class="badge')} ${o.status==='done'?'✓':''}</div>`;
+      return `<div class="cal-item ${ic}" title="${o.dealerName} ${o.product} ${fmt(o.total)}원" onclick="quickToggle('${o.id}',event)">${o.dealerName.slice(0,5)} ${prodBadge(o.product).replace(/ badge-\w+/,'').replace('class="badge','class="badge')} ${o.status==='done'?'✓':''}</div>`;
     }).join('');
     const more=dayOrders.length>3?`<div class="cal-more">+${dayOrders.length-3}건 더</div>`:'';
 
@@ -1871,6 +1859,7 @@ function renderRecCalendar(){
     </div>`;
   }
 
+  // 다음달 채우기
   const used=firstDay+daysInMonth;
   const fill=(7-used%7)%7;
   for(let i=1;i<=fill;i++){
@@ -1878,30 +1867,32 @@ function renderRecCalendar(){
   }
   html+=`</div></div>`;
 
-  const pendingTotal=pendingMonthOrders.reduce((s,o)=>s+orderAmount(o),0);
-  const doneTotal=doneMonthOrders.reduce((s,o)=>s+orderAmount(o),0);
+  // 요약
+  const pendingTotal=moOrders.filter(o=>o.status!=='done').reduce((s,o)=>s+o.total+(o.fee||0),0);
+  const doneTotal=moOrders.filter(o=>o.status==='done').reduce((s,o)=>s+o.total+(o.fee||0),0);
   html=`<div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
     <div class="kpi" style="--kpi-color:var(--yellow);flex:1;min-width:130px">
       <div class="kpi-label">이달 수금예정</div>
       <div class="kpi-value">${fmt(pendingTotal)}</div>
-      <div class="kpi-sub">원 · ${pendingMonthOrders.length}건</div>
+      <div class="kpi-sub">원 · ${moOrders.filter(o=>o.status!=='done').length}건</div>
     </div>
     <div class="kpi" style="--kpi-color:var(--green);flex:1;min-width:130px">
       <div class="kpi-label">수금완료</div>
       <div class="kpi-value">${fmt(doneTotal)}</div>
-      <div class="kpi-sub">이번달 실제 입금 기준 · ${doneMonthOrders.length}건</div>
+      <div class="kpi-sub">원 · ${moOrders.filter(o=>o.status==='done').length}건</div>
     </div>
   </div>`+html;
 
   document.getElementById('recCalendar').innerHTML=html;
+  // 이미 열린 날짜 상세가 있으면 유지(자동 닫힘 방지)
   if(_openDayDetail) showDayDetail(_openDayDetail);
 }
 
 function showDayDetail(ds){
-  const dayOrders=orders.filter(o=>receivableDisplayDate(o)===ds);
+  const dayOrders=orders.filter(o=>o.dueDate===ds);
   if(!dayOrders.length){ _openDayDetail=null; document.getElementById('recDayDetail').style.display='none'; return; }
   _openDayDetail=ds;
-  dayOrders.sort((a,b)=>a.orderDate.localeCompare(b.orderDate)||a.dealerName.localeCompare(b.dealerName));
+  const t=today();
   document.getElementById('recDayTitle').textContent=`📅 ${ds} 수금 내역 (${dayOrders.length}건)`;
   document.getElementById('recDayList').innerHTML=`
     <div class="table-wrap"><table>
@@ -1913,7 +1904,7 @@ function showDayDetail(ds){
         <td class="td-mono td-r">${fmt(o.qty)}</td>
         <td class="td-mono td-r">${fmt(o.total)}</td>
         <td class="td-mono td-r">${o.fee?fmt(o.fee):'-'}</td>
-        <td class="td-mono td-r" style="font-weight:700">${fmt(orderAmount(o))}</td>
+        <td class="td-mono td-r" style="font-weight:700">${fmt(o.total+(o.fee||0))}</td>
         <td>${statusBadge(o)}</td>
         <td>${o.status!=='done'?`<button class="btn btn-xs" style="background:var(--red);color:#fff;border-color:var(--red)" onclick="markDone('${o.id}')">✓ 수금</button>`:
           `<button class="btn btn-ghost btn-xs" onclick="cancelDone('${o.id}')">취소</button>`}</td>
@@ -1922,7 +1913,7 @@ function showDayDetail(ds){
     </table></div>
     <div style="margin-top:10px;padding:10px 14px;background:var(--blue-light);border-radius:6px;display:flex;justify-content:space-between">
       <span style="font-size:.82rem;font-weight:600;color:var(--blue)">합계</span>
-      <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--blue)">${fmt(dayOrders.reduce((s,o)=>s+orderAmount(o),0))}원</span>
+      <span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--blue)">${fmt(dayOrders.reduce((s,o)=>s+o.total+(o.fee||0),0))}원</span>
     </div>
   `;
   document.getElementById('recDayDetail').style.display='block';
@@ -1963,32 +1954,25 @@ function renderRecList(){
   const statusF=document.getElementById('rfStatus').value;
   const t=today();
 
-  let list=[...orders].sort((a,b)=>{
-    const ad=receivableDisplayDate(a);
-    const bd=receivableDisplayDate(b);
-    return ad.localeCompare(bd) || a.orderDate.localeCompare(b.orderDate) || a.dealerName.localeCompare(b.dealerName);
-  });
-  if(mo) list=list.filter(o=>receivableDisplayDate(o).startsWith(mo));
+  let list=[...orders].sort((a,b)=>a.dueDate.localeCompare(b.dueDate));
+  if(mo) list=list.filter(o=>o.dueDate.startsWith(mo));
   if(dealerId) list=list.filter(o=>o.dealerId===dealerId);
-  if(statusF==='pending') list=list.filter(o=>o.status!=='done'&&effectiveDueDate(o)>=t);
+  if(statusF==='pending') list=list.filter(o=>o.status!=='done'&&o.dueDate>=t);
   else if(statusF==='done') list=list.filter(o=>o.status==='done');
-  else if(statusF==='overdue') list=list.filter(o=>o.status!=='done'&&effectiveDueDate(o)<t);
+  else if(statusF==='overdue') list=list.filter(o=>o.status!=='done'&&o.dueDate<t);
 
   if(!list.length){ document.getElementById('recList').innerHTML=emptyHtml('수금 내역이 없습니다'); return; }
 
+  // 날짜별 그룹핑
   const groups={};
-  list.forEach(o=>{
-    const key=receivableDisplayDate(o);
-    if(!groups[key]) groups[key]=[];
-    groups[key].push(o);
-  });
+  list.forEach(o=>{ if(!groups[o.dueDate]) groups[o.dueDate]=[]; groups[o.dueDate].push(o); });
 
   let html='';
   Object.keys(groups).sort().forEach(ds=>{
     const items=groups[ds];
-    const total=items.reduce((s,o)=>s+orderAmount(o),0);
+    const total=items.reduce((s,o)=>s+o.total+(o.fee||0),0);
     const allDone=items.every(o=>o.status==='done');
-    const hasOverdue=items.some(o=>o.status!=='done'&&effectiveDueDate(o)<t);
+    const hasOverdue=items.some(o=>o.status!=='done'&&o.dueDate<t);
     const headerColor=allDone?'var(--green)':hasOverdue?'var(--red)':'var(--blue)';
 
     html+=`<div class="rec-month-group">
@@ -2009,7 +1993,7 @@ function renderRecList(){
           <td class="td-mono td-r">${fmt(o.qty)}</td>
           <td class="td-mono td-r">${fmt(o.total)}</td>
           <td class="td-mono td-r">${o.fee?fmt(o.fee):'-'}</td>
-          <td class="td-mono td-r" style="font-weight:700">${fmt(orderAmount(o))}</td>
+          <td class="td-mono td-r" style="font-weight:700">${fmt(o.total+(o.fee||0))}</td>
           <td>${statusBadge(o)}</td>
           <td><div style="display:flex;gap:4px">
             ${o.status!=='done'?`<button class="btn btn-xs" style="background:var(--red);color:#fff;border-color:var(--red)" onclick="markDone('${o.id}')">✓ 수금</button>`
@@ -2021,8 +2005,9 @@ function renderRecList(){
     </div>`;
   });
 
-  const grandTotal=list.reduce((s,o)=>s+orderAmount(o),0);
-  const doneTotal=list.filter(o=>o.status==='done').reduce((s,o)=>s+orderAmount(o),0);
+  // 하단 합계
+  const grandTotal=list.reduce((s,o)=>s+o.total+(o.fee||0),0);
+  const doneTotal=list.filter(o=>o.status==='done').reduce((s,o)=>s+o.total+(o.fee||0),0);
   html+=`<div style="display:flex;justify-content:flex-end;gap:16px;padding:12px 16px;background:var(--surface2);border-radius:var(--radius-sm);border:1px solid var(--border)">
     <span style="font-size:.8rem;color:var(--text2)">총 ${list.length}건</span>
     <span style="font-size:.8rem;color:var(--green)">수금완료: <strong>${fmt(doneTotal)}</strong>원</span>
@@ -2034,23 +2019,13 @@ function renderRecList(){
 }
 
 async function markAllOnDate(ds){
-  const items=orders.filter(o=>receivableDisplayDate(o)===ds&&o.status!=='done');
+  const items=orders.filter(o=>o.dueDate===ds&&o.status!=='done');
   if(!items.length) return;
-  const totalAmt=items.reduce((s,o)=>s+orderAmount(o),0);
-  const collectedDate=today();
-  if(!confirm(`${ds} 미수금 전체를 수금 처리하시겠습니까?\n\n건수: ${items.length}건\n합계: ${fmt(totalAmt)}원\n실제 수금일: ${collectedDate}`)) return;
+  const totalAmt=items.reduce((s,o)=>s+o.total+(o.fee||0),0);
+  if(!confirm(`${ds} 미수금 전체를 수금 처리하시겠습니까?\n\n건수: ${items.length}건\n합계: ${fmt(totalAmt)}원`)) return;
   for(const o of items){
-    const oldDueDate=effectiveDueDate(o);
-    o.status='done';
-    o.collectedAt=collectedDate;
-    if(collectedDate!==oldDueDate){
-      if(!o.originalDueDate) o.originalDueDate=oldDueDate;
-      o.dueDate=collectedDate;
-      addAuditLog('status','수금',`수금완료: ${o.dealerName} ${o.product} ${fmt(o.total)}원 (예정일:${oldDueDate} → 실제수금일:${collectedDate})`);
-    } else {
-      delete o.originalDueDate;
-      addAuditLog('status','수금',`수금완료: ${o.dealerName} ${o.product} ${fmt(o.total)}원 (수금일:${collectedDate})`);
-    }
+    o.status='done'; o.collectedAt=today();
+    addAuditLog('status','수금',`수금완료: ${o.dealerName} ${o.product} ${fmt(o.total)}원`);
     await fbSaveDoc('orders',o.id,o);
   }
   saveLS();
@@ -2483,13 +2458,20 @@ function renderReport(){
   rptMon=mo;
   const t=ymd();
 
-  const mo_orders=orders.filter(o=>(o.orderDate||'').startsWith(mo));
-  const collectedOrders=orders.filter(o=>isCollectedInMonth(o, mo));
-
+  // 이번달 발주 기준 총매출
+  const mo_orders=orders.filter(o=>o.orderDate.startsWith(mo));
   const totalSales=mo_orders.reduce((s,o)=>s+orderAmount(o),0);
-  const collected=collectedOrders.reduce((s,o)=>s+orderAmount(o),0);
-  const pending=orders.filter(o=>isOverdueInMonth(o, mo, t)).reduce((s,o)=>s+orderAmount(o),0);
 
+  // 수금완료: 실제 입금일(collectedAt) 기준 이번달 입금된 건
+  const collected=orders.filter(o=>o.status==='done' && ym(o.collectedAt||o.dueDate)===mo)
+                        .reduce((s,o)=>s+orderAmount(o),0);
+
+  // 미수금: 원래 입금예정일(originalDueDate 우선)이 이번달이고 경과된 미수금
+  const effDue=o=>(o.originalDueDate||o.dueDate||'');
+  const pending=orders.filter(o=>o.status!=='done' && effDue(o).startsWith(mo) && effDue(o)<t)
+                      .reduce((s,o)=>s+orderAmount(o),0);
+
+  // 제품별 수량
   const prodQty={};
   products.forEach(p=>{ prodQty[p]=0; });
   mo_orders.forEach(o=>{ if(prodQty[o.product]!==undefined) prodQty[o.product]+=(Number(o.qty)||0); });
@@ -2503,27 +2485,18 @@ function renderReport(){
     <div class="kpi" style="--kpi-color:var(--gray)"><div class="kpi-label">총 수량</div><div class="kpi-value">${fmt(totalQty)}</div><div class="kpi-sub">${prodQtyText}</div></div>
   `;
 
+  // 대리점별
   const dm={};
-  function ensureDealerRow(id, name='-'){
-    if(!dm[id]) dm[id]={name,total:0,qty:0,cnt:0,done:0};
-    else if(name && (!dm[id].name || dm[id].name==='-')) dm[id].name=name;
-  }
-
   mo_orders.forEach(o=>{
-    ensureDealerRow(o.dealerId, o.dealerName);
-    dm[o.dealerId].total+=orderAmount(o);
-    dm[o.dealerId].qty+=(Number(o.qty)||0);
+    if(!dm[o.dealerId]) dm[o.dealerId]={name:o.dealerName,total:0,qty:0,cnt:0,done:0};
+    dm[o.dealerId].total+=o.total+(o.fee||0);
+    dm[o.dealerId].qty+=o.qty;
     dm[o.dealerId].cnt++;
+    if(o.status==='done') dm[o.dealerId].done+=o.total+(o.fee||0);
   });
-
-  collectedOrders.forEach(o=>{
-    ensureDealerRow(o.dealerId, o.dealerName || (getDealerById(o.dealerId)||{}).name || '-');
-    dm[o.dealerId].done+=orderAmount(o);
-  });
-
-  const dRows=Object.values(dm).sort((a,b)=>(b.total-a.total)||(b.done-a.done)||a.name.localeCompare(b.name));
+  const dRows=Object.values(dm).sort((a,b)=>b.total-a.total);
   document.getElementById('rptDealer').innerHTML=dRows.length?`<div class="table-wrap"><table>
-    <thead><tr><th>대리점</th><th>건수</th><th>수량</th><th>매출액</th><th>이번달 수금</th></tr></thead>
+    <thead><tr><th>대리점</th><th>건수</th><th>수량</th><th>매출액</th><th>수금</th></tr></thead>
     <tbody>${dRows.map(d=>`<tr>
       <td style="font-size:.78rem">${d.name}</td>
       <td class="td-mono td-r">${d.cnt}</td>
@@ -2533,6 +2506,7 @@ function renderReport(){
     </tr>`).join('')}</tbody>
   </table></div>`:emptyHtml('데이터 없음');
 
+  // 제품별
   const pm={};
   mo_orders.forEach(o=>{
     if(!pm[o.product]) pm[o.product]={total:0,qty:0,cnt:0};
@@ -2551,15 +2525,20 @@ function renderReport(){
     </tr>`).join('')}</tbody>
   </table></div>`:emptyHtml('데이터 없음');
 
-  const allMonths=[...new Set(orders.map(o=>ym(o.orderDate)).filter(Boolean))].sort();
+  // 월별 누적
+  const allMonths=[...new Set(orders.map(o=>ym(o.orderDate)))].sort();
   if(allMonths.length){
     document.getElementById('rptMonthly').innerHTML=`<div class="table-wrap"><table>
       <thead><tr><th>월</th><th>발주건수</th><th>총매출</th><th>수금완료</th><th>미수금</th></tr></thead>
       <tbody>${allMonths.map(m=>{
         const mOrders=orders.filter(o=>ym(o.orderDate)===m);
         const tot=mOrders.reduce((s,o)=>s+orderAmount(o),0);
-        const col=orders.filter(o=>isCollectedInMonth(o, m)).reduce((s,o)=>s+orderAmount(o),0);
-        const pen=orders.filter(o=>isOverdueInMonth(o, m, t)).reduce((s,o)=>s+orderAmount(o),0);
+        // 수금완료: 실제 입금일(collectedAt) 기준 해당 월 입금분
+        const col=orders.filter(o=>o.status==='done' && ym(o.collectedAt||o.dueDate)===m)
+                        .reduce((s,o)=>s+orderAmount(o),0);
+        // 미수금: 원래 예정일(originalDueDate 우선)이 해당 월이고 미수금인 건
+        const pen=orders.filter(o=>o.status!=='done' && (o.originalDueDate||o.dueDate||'').startsWith(m))
+                        .reduce((s,o)=>s+orderAmount(o),0);
         return `<tr ${m===mo?'style="background:var(--blue-light);font-weight:700"':''}>
           <td class="td-mono">${m.replace('-','년 ')}월</td>
           <td class="td-mono td-r">${mOrders.length}</td>
@@ -2571,16 +2550,17 @@ function renderReport(){
     </table></div>`;
   } else { document.getElementById('rptMonthly').innerHTML=emptyHtml('데이터 없음'); }
 
+  // ── 월별 매출 추이 그래프 ──
   const chartMonEl=document.getElementById('rptChartMonthly');
   if(allMonths.length){
     const recentMonths=allMonths.slice(-12);
     const maxTot=Math.max(...recentMonths.map(m=>{
       const mO=orders.filter(o=>ym(o.orderDate)===m);
-      return mO.reduce((s,o)=>s+orderAmount(o),0);
+      return mO.reduce((s,o)=>s+o.total+(o.fee||0),0);
     }),1);
     const bars=recentMonths.map(m=>{
       const mO=orders.filter(o=>ym(o.orderDate)===m);
-      const tot=mO.reduce((s,o)=>s+orderAmount(o),0);
+      const tot=mO.reduce((s,o)=>s+o.total+(o.fee||0),0);
       const barH=Math.max(Math.round(tot/maxTot*80),3);
       const isCur=m===mo;
       const label=m.slice(5)+'월';
@@ -2595,6 +2575,7 @@ function renderReport(){
     chartMonEl.innerHTML=`<div style="display:flex;gap:3px;align-items:flex-end;padding:0 4px">${bars}</div>`;
   } else { chartMonEl.innerHTML=emptyHtml('데이터 없음'); }
 
+  // ── 제품별 판매량 그래프 ──
   const chartProdEl=document.getElementById('rptChartProduct');
   if(pRows.length){
     const pColorMap={'JUC':'var(--juc)','MEDIAS':'var(--medias)','DELL':'var(--dell)','AMT':'var(--amt)','KY':'var(--ky)'};
