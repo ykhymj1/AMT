@@ -62,6 +62,12 @@
   --medias-bg: #f5f3ff;
   --dell: #059669;
   --dell-bg: #ecfdf5;
+  --amt: #2563eb;
+  --amt-bg: #eff6ff;
+  --ky: #d97706;
+  --ky-bg: #fffbeb;
+  --internal: #7c3aed;
+  --internal-bg: #f5f3ff;
 
   --text: #111827;
   --text2: #4b5563;
@@ -418,6 +424,19 @@ tbody td{padding:9px 12px;vertical-align:middle;}
 
 /* ═══ INV CARDS ═══ */
 .inv-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;}
+
+/* ═══ COMPANY TABS ═══ */
+.company-tab-bar{display:flex;gap:4px;margin-bottom:14px;background:var(--surface2);padding:4px;border-radius:var(--radius-sm);border:1px solid var(--border);}
+.company-tab{flex:1;padding:7px 12px;border:none;background:none;border-radius:var(--radius-sm);font-family:inherit;font-size:.8rem;font-weight:600;cursor:pointer;color:var(--text2);transition:all .15s;}
+.company-tab.active-amt{background:var(--amt);color:#fff;}
+.company-tab.active-ky{background:var(--ky);color:#fff;}
+.company-badge-amt{background:var(--amt-bg);color:var(--amt);padding:2px 8px;border-radius:20px;font-size:.68rem;font-weight:700;}
+.company-badge-ky{background:var(--ky-bg);color:var(--ky);padding:2px 8px;border-radius:20px;font-size:.68rem;font-weight:700;}
+.internal-card{border-left:4px solid var(--internal);background:linear-gradient(135deg,var(--internal-bg),#fff);}
+.inv-company-section{margin-bottom:20px;}
+.inv-company-header{display:flex;align-items:center;gap:8px;padding:10px 14px;border-radius:var(--radius-sm);margin-bottom:10px;font-weight:700;font-size:.85rem;}
+.inv-company-header.amt{background:var(--amt);color:#fff;}
+.inv-company-header.ky{background:var(--ky);color:#fff;}
 .inv-card{
   background:var(--white);border:1.5px solid var(--border);
   border-radius:var(--radius);padding:18px;
@@ -516,6 +535,7 @@ tbody td{padding:9px 12px;vertical-align:middle;}
 <nav class="nav">
   <button class="nav-btn active" data-page="dashboard" onclick="nav(this)">📊 대시보드</button>
   <button class="nav-btn" data-page="order" onclick="nav(this)">📦 발주입력</button>
+  <button class="nav-btn" data-page="internal" onclick="nav(this)">🔄 내부거래(AMT→KY)</button>
   <button class="nav-btn" data-page="receivable" onclick="nav(this)">💰 수금관리</button>
   <button class="nav-btn" data-page="inventory" onclick="nav(this)">🗃️ 재고</button>
   <button class="nav-btn" data-page="dealers" onclick="nav(this)">🏢 대리점관리</button>
@@ -651,7 +671,83 @@ tbody td{padding:9px 12px;vertical-align:middle;}
   </div>
 </div>
 
-<!-- ═══════════ 수금관리 ═══════════ -->
+<!-- ═══════════ 내부거래 (AMT → KY) ═══════════ -->
+<div class="page" id="page-internal">
+  <div class="card internal-card">
+    <div class="card-header">
+      <div class="card-title">
+        <div class="card-title-dot" style="background:var(--internal)"></div>
+        AMT → KY 내부거래 입력
+        <span style="font-size:.72rem;color:var(--text3);font-weight:400;margin-left:6px">(AMT 출고 → KY 입고 자동처리)</span>
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>거래일 <span class="req">*</span></label>
+        <input type="date" id="itDate">
+      </div>
+      <div class="form-group">
+        <label>제품 <span class="req">*</span></label>
+        <select id="itProduct" onchange="itOnProduct()">
+          <option value="">-- 제품 선택 --</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>수량 <span class="req">*</span></label>
+        <input type="number" id="itQty" min="1" placeholder="0" oninput="itCalcTotal()">
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>단가 (수정가능) <span class="req">*</span></label>
+        <input type="number" id="itPrice" placeholder="0" oninput="itCalcTotal()">
+      </div>
+      <div class="form-group">
+        <label>합계금액</label>
+        <input type="number" id="itTotal" readonly style="font-weight:700;color:var(--internal)">
+      </div>
+      <div class="form-group">
+        <label>메모</label>
+        <input type="text" id="itMemo" placeholder="선택사항">
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--internal-bg);border-radius:var(--radius-sm);margin-bottom:12px;flex-wrap:wrap">
+      <span style="font-size:.78rem;color:var(--internal);font-weight:600">📤 AMT 재고</span>
+      <span id="itAmtStock" style="font-family:'JetBrains Mono',monospace;font-size:.82rem;font-weight:700">-</span>
+      <span style="font-size:.78rem;color:var(--ky);font-weight:600;margin-left:12px">📥 KY 재고</span>
+      <span id="itKyStock" style="font-family:'JetBrains Mono',monospace;font-size:.82rem;font-weight:700">-</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button class="btn btn-primary" style="background:var(--internal);border-color:var(--internal)" onclick="saveInternal()">💾 내부거래 저장</button>
+      <span id="itMsg" style="font-size:.8rem;color:var(--green);font-weight:500"></span>
+    </div>
+  </div>
+
+  <!-- 내부거래 목록 -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-header">
+      <div class="card-title"><div class="card-title-dot" style="background:var(--internal)"></div>내부거래 이력</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-ghost btn-sm" onclick="renderInternalList()">🔄 새로고침</button>
+      </div>
+    </div>
+    <div class="filter-bar">
+      <div class="filter-group">
+        <label>월</label>
+        <input type="month" id="itFilterM" onchange="renderInternalList()">
+      </div>
+      <div class="filter-group">
+        <label>제품</label>
+        <select id="itFilterP" onchange="renderInternalList()">
+          <option value="">전체</option>
+        </select>
+      </div>
+    </div>
+    <div id="internalList"></div>
+  </div>
+</div>
+
+
 <div class="page" id="page-receivable">
   <div class="tab-bar">
     <button class="tab-btn active" onclick="recTab('calendar',this)">📅 캘린더</button>
@@ -709,10 +805,20 @@ tbody td{padding:9px 12px;vertical-align:middle;}
 
 <!-- ═══════════ 재고 ═══════════ -->
 <div class="page" id="page-inventory">
-  <div class="inv-cards" id="invCards"></div>
+  <!-- 회사 탭 -->
+  <div class="company-tab-bar">
+    <button class="company-tab active-amt" id="invTabAmt" onclick="switchInvCompany('AMT',this)">🏭 AMT 재고</button>
+    <button class="company-tab" id="invTabKy" onclick="switchInvCompany('KY',this)">🏢 KY 재고</button>
+  </div>
+
+  <div id="invCards"></div>
+
   <div class="card" style="margin-top:16px">
     <div class="card-header">
-      <div class="card-title"><div class="card-title-dot" style="background:var(--juc)"></div>재고 조정</div>
+      <div class="card-title">
+        <div class="card-title-dot" id="invAdjDot" style="background:var(--amt)"></div>
+        <span id="invAdjTitle">AMT</span> 재고 조정
+      </div>
     </div>
     <div class="form-grid">
       <div class="form-group">
@@ -742,13 +848,21 @@ tbody td{padding:9px 12px;vertical-align:middle;}
         <input type="text" id="invMemo" placeholder="선택">
       </div>
     </div>
-    <button class="btn btn-primary" onclick="saveInv()">💾 저장</button>
+    <button class="btn btn-primary" id="invSaveBtn" onclick="saveInv()">💾 저장</button>
   </div>
   <div class="card" style="margin-top:16px">
     <div class="card-header">
       <div class="card-title"><div class="card-title-dot" style="background:var(--gray)"></div>재고 이력</div>
     </div>
     <div class="filter-bar">
+      <div class="filter-group">
+        <label>회사</label>
+        <select id="invFilterC" onchange="renderInvHistory()">
+          <option value="">전체</option>
+          <option value="AMT">AMT</option>
+          <option value="KY">KY</option>
+        </select>
+      </div>
       <div class="filter-group">
         <label>월</label>
         <input type="month" id="invFilterM" onchange="renderInvHistory()">
@@ -924,12 +1038,15 @@ tbody td{padding:9px 12px;vertical-align:middle;}
 let dealers = [];  // 대리점 마스터
 let orders  = [];  // 발주/매출
 let invLogs = [];  // 재고이력
+let internalTrades = []; // AMT→KY 내부거래
 let products = ['JUC','MEDIAS','DELL']; // 전역 제품목록
+let curInvCompany = 'AMT'; // 현재 재고 회사
 
 const LS_DEALERS = 'amt2_dealers';
 const LS_ORDERS  = 'amt2_orders';
 const LS_INV     = 'amt2_inv';
 const LS_PRODS   = 'amt2_products';
+const LS_INTERNAL= 'amt2_internal';
 
 function loadLS(){
   try{
@@ -937,8 +1054,11 @@ function loadLS(){
     if(d) dealers=d; else resetDealers();
     orders  =JSON.parse(localStorage.getItem(LS_ORDERS)||'[]');
     invLogs =JSON.parse(localStorage.getItem(LS_INV)||'[]');
+    internalTrades=JSON.parse(localStorage.getItem(LS_INTERNAL)||'[]');
     const p=JSON.parse(localStorage.getItem(LS_PRODS)||'null');
     if(p) products=p;
+    // 기존 invLogs에 company 없으면 AMT로 기본설정
+    invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; });
   }catch(e){resetDealers();}
 }
 function saveLS(){
@@ -946,6 +1066,7 @@ function saveLS(){
   localStorage.setItem(LS_ORDERS,JSON.stringify(orders));
   localStorage.setItem(LS_INV,JSON.stringify(invLogs));
   localStorage.setItem(LS_PRODS,JSON.stringify(products));
+  localStorage.setItem(LS_INTERNAL,JSON.stringify(internalTrades));
 }
 
 /* ═══ 기본 대리점 데이터 ═══ */
@@ -1086,10 +1207,11 @@ function init(){
   // 기본날짜
   document.getElementById('oDate').value=today();
   document.getElementById('invDate').value=today();
+  document.getElementById('itDate').value=today();
 
   // 필터 기본값
   const cm=curMonth;
-  ['ofMonth','rfMonth','invFilterM'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=cm; });
+  ['ofMonth','rfMonth','invFilterM','itFilterM'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=cm; });
 
   // Firebase
   const fb=window._fb;
@@ -1106,6 +1228,7 @@ function refreshAll(){
   populateSelects();
   renderDash();
   renderOrders();
+  renderInternalList();
   renderRecCalendar();
   renderRecList();
   renderInvCards();
@@ -1141,7 +1264,7 @@ function populateSelects(){
   }
 
   // 재고 제품
-  ['invProd','invFilterP'].forEach(id=>{
+  ['invProd','invFilterP','itProduct','itFilterP'].forEach(id=>{
     const el=document.getElementById(id); if(!el) return;
     const v=el.value;
     const isFilter=id.includes('Filter');
@@ -1210,10 +1333,11 @@ async function saveOrder(){
 
   orders.push(order);
 
-  // 자동 출고
+  // 자동 출고 — KY 재고에서 출고 (KY → 대리점)
   invLogs.push({
     id:'inv_'+Date.now(), date:orderDate,
     product, qty:-qty, type:'out',
+    company:'KY',
     memo:`발주출고-${dealer.name}`, relOrder:order.id,
     createdAt:new Date().toISOString()
   });
@@ -1270,11 +1394,15 @@ function renderDash(){
       <div class="kpi-value">${cnt}</div>
       <div class="kpi-sub">건</div>
     </div>
-    ${products.map(p=>`<div class="kpi" style="--kpi-color:${pColors[p]||'var(--gray)'}">
-      <div class="kpi-label">${p} 판매</div>
-      <div class="kpi-value">${fmt(prodSales[p]?.qty||0)}</div>
-      <div class="kpi-sub">개</div>
-    </div>`).join('')}
+    ${products.map(p=>{
+      const amtQty=calcStock(p,'AMT');
+      const kyQty=calcStock(p,'KY');
+      return `<div class="kpi" style="--kpi-color:${pColors[p]||'var(--gray)'}">
+        <div class="kpi-label">${p} 재고</div>
+        <div class="kpi-value" style="font-size:1rem">${fmt(amtQty)}<span style="font-size:.7rem;color:var(--text3);margin:0 4px">/</span>${fmt(kyQty)}</div>
+        <div class="kpi-sub"><span style="color:var(--amt)">AMT</span> / <span style="color:var(--ky)">KY</span></div>
+      </div>`;
+    }).join('')}
   `;
 
   // 미수금
@@ -1634,27 +1762,59 @@ async function markAllOnDate(ds){
 /* ═══════════════════════════════════════════════════════
    INVENTORY
 ═══════════════════════════════════════════════════════ */
-function calcStock(prod){
+function calcStock(prod, company=null){
   let total=0;
-  invLogs.filter(i=>i.product===prod).forEach(i=>{
+  let logs=invLogs.filter(i=>i.product===prod);
+  if(company) logs=logs.filter(i=>(i.company||'AMT')===company);
+  logs.forEach(i=>{
     if(i.type==='adjust') total=i.qty;
     else total+=i.qty;
   });
   return total;
 }
 
+function calcInternalStock(prod, company){
+  // internalTrades 반영: AMT→KY 거래
+  let total=0;
+  internalTrades.filter(t=>t.product===prod).forEach(t=>{
+    if(company==='AMT') total-=t.qty; // AMT는 출고
+    else total+=t.qty;                // KY는 입고
+  });
+  return total;
+}
+
+let _curInvCompany='AMT';
+
+function switchInvCompany(company, btn){
+  _curInvCompany=company;
+  document.getElementById('invTabAmt').className='company-tab'+(company==='AMT'?' active-amt':'');
+  document.getElementById('invTabKy').className='company-tab'+(company==='KY'?' active-ky':'');
+  document.getElementById('invAdjDot').style.background=company==='AMT'?'var(--amt)':'var(--ky)';
+  document.getElementById('invAdjTitle').textContent=company;
+  document.getElementById('invSaveBtn').style.background=company==='AMT'?'var(--amt)':'var(--ky)';
+  renderInvCards();
+}
+
 function renderInvCards(){
   const pColors={'JUC':'var(--juc)','MEDIAS':'var(--medias)','DELL':'var(--dell)'};
-  document.getElementById('invCards').innerHTML=`<div class="inv-cards">${products.map(p=>{
-    const qty=calcStock(p);
+  const company=_curInvCompany;
+  const color=company==='AMT'?'var(--amt)':'var(--ky)';
+
+  const cardsHtml=products.map(p=>{
+    const qty=calcStock(p, company);
     const c=pColors[p]||'var(--blue)';
     const warn=qty<0?'var(--red)':qty<10?'var(--yellow)':c;
-    return `<div class="inv-card" style="--ic-color:${c}">
-      <div class="inv-product-name">${p}</div>
+    return `<div class="inv-card" style="--ic-color:${color}">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start">
+        <div class="inv-product-name">${p}</div>
+        <span style="font-size:.65rem;padding:2px 6px;border-radius:10px;font-weight:700;background:${company==='AMT'?'var(--amt-bg)':'var(--ky-bg)'};color:${color}">${company}</span>
+      </div>
       <div class="inv-qty" style="color:${warn}">${fmt(qty)}</div>
       <div class="inv-unit">개 현재고</div>
     </div>`;
-  }).join('')}</div>`;
+  }).join('');
+
+  document.getElementById('invCards').innerHTML=`<div class="inv-cards">${cardsHtml}</div>`;
 }
 
 async function saveInv(){
@@ -1663,11 +1823,12 @@ async function saveInv(){
   const type=document.getElementById('invType').value;
   let qty=parseInt(document.getElementById('invQty').value)||0;
   const memo=document.getElementById('invMemo').value;
+  const company=_curInvCompany;
   if(!date||!prod||qty===0){ toast('날짜·제품·수량을 입력하세요','error'); return; }
   if(type==='out') qty=-Math.abs(qty);
   else if(type==='in') qty=Math.abs(qty);
 
-  const item={id:'inv_'+Date.now(),date,product:prod,qty,type,memo,createdAt:new Date().toISOString()};
+  const item={id:'inv_'+Date.now(),date,product:prod,qty,type,company,memo,createdAt:new Date().toISOString()};
   invLogs.push(item);
   saveLS();
   await fbSaveDoc('inv',item.id,item);
@@ -1679,21 +1840,25 @@ async function saveInv(){
 function renderInvHistory(){
   const mo=document.getElementById('invFilterM').value;
   const prod=document.getElementById('invFilterP').value;
+  const company=document.getElementById('invFilterC')?document.getElementById('invFilterC').value:'';
   const pColors={'JUC':'var(--juc)','MEDIAS':'var(--medias)','DELL':'var(--dell)'};
 
   let list=[...invLogs].sort((a,b)=>b.date.localeCompare(a.date));
   if(mo) list=list.filter(i=>i.date.startsWith(mo));
   if(prod) list=list.filter(i=>i.product===prod);
+  if(company) list=list.filter(i=>(i.company||'AMT')===company);
 
   if(!list.length){ document.getElementById('invHistory').innerHTML=emptyHtml('이력 없음'); return; }
   document.getElementById('invHistory').innerHTML=`<div class="table-wrap"><table>
-    <thead><tr><th>날짜</th><th>제품</th><th>구분</th><th>수량</th><th>메모</th></tr></thead>
+    <thead><tr><th>날짜</th><th>회사</th><th>제품</th><th>구분</th><th>수량</th><th>메모</th></tr></thead>
     <tbody>
     ${list.map(i=>{
       const c=pColors[i.product]||'var(--gray)';
       const tc=i.type==='out'?'var(--red)':i.type==='adjust'?'var(--yellow)':'var(--green)';
+      const co=i.company||'AMT';
       return `<tr>
         <td class="td-mono">${i.date}</td>
+        <td><span class="${co==='AMT'?'company-badge-amt':'company-badge-ky'}">${co}</span></td>
         <td><span class="badge" style="background:${c}20;color:${c}">${i.product}</span></td>
         <td style="color:${tc};font-weight:600;font-size:.75rem">${i.type==='in'?'입고':i.type==='out'?'출고':'조정'}</td>
         <td class="td-mono td-r" style="color:${i.qty<0?'var(--red)':'var(--green)'};font-weight:700">${i.qty>0?'+':''}${fmt(i.qty)}</td>
@@ -1702,6 +1867,148 @@ function renderInvHistory(){
     }).join('')}
     </tbody>
   </table></div>`;
+}
+
+/* ═══════════════════════════════════════════════════════
+   INTERNAL TRADE (AMT → KY)
+═══════════════════════════════════════════════════════ */
+function itOnProduct(){
+  const prod=document.getElementById('itProduct').value;
+  if(!prod){ 
+    document.getElementById('itAmtStock').textContent='-';
+    document.getElementById('itKyStock').textContent='-';
+    return;
+  }
+  const amtQty=calcStock(prod,'AMT');
+  const kyQty=calcStock(prod,'KY');
+  const amtEl=document.getElementById('itAmtStock');
+  const kyEl=document.getElementById('itKyStock');
+  amtEl.textContent=`${fmt(amtQty)}개`;
+  amtEl.style.color=amtQty<0?'var(--red)':amtQty<10?'var(--yellow)':'var(--text)';
+  kyEl.textContent=`${fmt(kyQty)}개`;
+  kyEl.style.color=kyQty<0?'var(--red)':kyQty<10?'var(--yellow)':'var(--text)';
+}
+
+function itCalcTotal(){
+  const q=parseInt(document.getElementById('itQty').value)||0;
+  const p=parseInt(document.getElementById('itPrice').value)||0;
+  document.getElementById('itTotal').value=q*p;
+}
+
+async function saveInternal(){
+  const date=document.getElementById('itDate').value;
+  const product=document.getElementById('itProduct').value;
+  const qty=parseInt(document.getElementById('itQty').value)||0;
+  const price=parseInt(document.getElementById('itPrice').value)||0;
+  const memo=document.getElementById('itMemo').value;
+  const total=qty*price;
+
+  if(!date||!product||qty<=0){ toast('날짜·제품·수량을 입력하세요','error'); return; }
+  if(price<=0){ toast('단가를 입력하세요','error'); return; }
+
+  // AMT 재고 확인
+  const amtQty=calcStock(product,'AMT');
+  if(amtQty<qty){
+    if(!confirm(`⚠️ AMT 재고(${fmt(amtQty)}개)가 부족합니다. 계속 진행하시겠습니까?`)) return;
+  }
+
+  const id='it_'+Date.now();
+  const trade={ id, date, product, qty, price, total, memo, createdAt:new Date().toISOString() };
+  internalTrades.push(trade);
+
+  // AMT 출고 로그
+  const amtLog={
+    id:'inv_'+Date.now()+'_amt', date, product, qty:-qty, type:'out',
+    company:'AMT', memo:`내부거래→KY${memo?' ('+memo+')':''}`, relInternal:id,
+    createdAt:new Date().toISOString()
+  };
+  // KY 입고 로그
+  const kyLog={
+    id:'inv_'+(Date.now()+1)+'_ky', date, product, qty:qty, type:'in',
+    company:'KY', memo:`내부거래←AMT${memo?' ('+memo+')':''}`, relInternal:id,
+    createdAt:new Date().toISOString()
+  };
+  invLogs.push(amtLog);
+  invLogs.push(kyLog);
+
+  saveLS();
+  await fbSaveDoc('internal',id,trade);
+  await fbSaveDoc('inv',amtLog.id,amtLog);
+  await fbSaveDoc('inv',kyLog.id,kyLog);
+
+  toast(`내부거래 저장 완료 ✓ AMT→KY ${product} ${fmt(qty)}개`,'success');
+  document.getElementById('itMsg').textContent=`저장됨 · ${product} ${fmt(qty)}개 이전`;
+  setTimeout(()=>document.getElementById('itMsg').textContent='',4000);
+  document.getElementById('itQty').value='';
+  document.getElementById('itPrice').value='';
+  document.getElementById('itTotal').value='';
+  itOnProduct();
+  refreshAll();
+}
+
+async function deleteInternal(id){
+  if(!confirm('이 내부거래를 삭제할까요? (관련 재고이력도 함께 삭제됩니다)')) return;
+  internalTrades=internalTrades.filter(t=>t.id!==id);
+  invLogs=invLogs.filter(i=>i.relInternal!==id);
+  saveLS();
+  await fbDelDoc('internal',id);
+  toast('내부거래 삭제','info');
+  refreshAll();
+}
+
+function renderInternalList(){
+  const mo=document.getElementById('itFilterM').value;
+  const prod=document.getElementById('itFilterP').value;
+
+  let list=[...internalTrades].sort((a,b)=>b.date.localeCompare(a.date));
+  if(mo) list=list.filter(t=>t.date.startsWith(mo));
+  if(prod) list=list.filter(t=>t.product===prod);
+
+  if(!list.length){ document.getElementById('internalList').innerHTML=emptyHtml('내부거래 내역이 없습니다'); return; }
+
+  const pColors={'JUC':'var(--juc)','MEDIAS':'var(--medias)','DELL':'var(--dell)'};
+  const totalQty=list.reduce((s,t)=>s+t.qty,0);
+  const totalAmt=list.reduce((s,t)=>s+t.total,0);
+
+  document.getElementById('internalList').innerHTML=`
+    <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap">
+      <div class="kpi" style="--kpi-color:var(--internal);flex:1;min-width:120px">
+        <div class="kpi-label">거래 건수</div>
+        <div class="kpi-value">${list.length}</div><div class="kpi-sub">건</div>
+      </div>
+      <div class="kpi" style="--kpi-color:var(--amt);flex:1;min-width:120px">
+        <div class="kpi-label">총 수량</div>
+        <div class="kpi-value">${fmt(totalQty)}</div><div class="kpi-sub">개</div>
+      </div>
+      <div class="kpi" style="--kpi-color:var(--ky);flex:1;min-width:120px">
+        <div class="kpi-label">총 금액</div>
+        <div class="kpi-value">${fmt(totalAmt)}</div><div class="kpi-sub">원</div>
+      </div>
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr>
+        <th>거래일</th><th>거래방향</th><th>제품</th><th>수량</th><th>단가</th><th>금액</th><th>메모</th><th style="text-align:center">삭제</th>
+      </tr></thead>
+      <tbody>
+      ${list.map(t=>{
+        const c=pColors[t.product]||'var(--gray)';
+        return `<tr>
+          <td class="td-mono">${t.date}</td>
+          <td>
+            <span class="company-badge-amt">AMT</span>
+            <span style="margin:0 4px;color:var(--internal);font-weight:700">→</span>
+            <span class="company-badge-ky">KY</span>
+          </td>
+          <td><span class="badge" style="background:${c}20;color:${c}">${t.product}</span></td>
+          <td class="td-mono td-r">${fmt(t.qty)}</td>
+          <td class="td-mono td-r">${fmt(t.price)}</td>
+          <td class="td-mono td-r" style="font-weight:700;color:var(--internal)">${fmt(t.total)}</td>
+          <td style="font-size:.75rem;color:var(--text2)">${t.memo||''}</td>
+          <td class="td-c"><button class="btn btn-danger btn-xs" onclick="deleteInternal('${t.id}')">✕</button></td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table></div>`;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -1960,14 +2267,16 @@ async function fbDelDoc(col,id){
 async function fbSync(){
   const fb=window._fb; if(!fb||!fb.ready){ toast('Firebase 미연결','error'); return; }
   try{
-    const [os,is,ds]=[
+    const [os,is,ds,its]=[
       await fb.getDocs(fb.collection(fb.db,'orders')),
       await fb.getDocs(fb.collection(fb.db,'inv')),
-      await fb.getDocs(fb.collection(fb.db,'dealers'))
+      await fb.getDocs(fb.collection(fb.db,'dealers')),
+      await fb.getDocs(fb.collection(fb.db,'internal'))
     ];
     if(os.docs.length) orders=os.docs.map(d=>d.data());
-    if(is.docs.length) invLogs=is.docs.map(d=>d.data());
+    if(is.docs.length){ invLogs=is.docs.map(d=>d.data()); invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; }); }
     if(ds.docs.length) dealers=ds.docs.map(d=>d.data());
+    if(its.docs.length) internalTrades=its.docs.map(d=>d.data());
     saveLS();
     toast('Firebase 동기화 완료!','success');
     refreshAll();
@@ -1978,7 +2287,7 @@ async function fbSync(){
    IMPORT / EXPORT
 ═══════════════════════════════════════════════════════ */
 function exportData(){
-  const data={orders,invLogs,dealers,products,exportedAt:new Date().toISOString(),version:2};
+  const data={orders,invLogs,dealers,products,internalTrades,exportedAt:new Date().toISOString(),version:3};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
@@ -1996,9 +2305,10 @@ async function importData(e){
     try{
       const data=JSON.parse(ev.target.result);
       if(data.orders) orders=data.orders;
-      if(data.invLogs) invLogs=data.invLogs;
+      if(data.invLogs){ invLogs=data.invLogs; invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; }); }
       if(data.dealers) dealers=data.dealers;
       if(data.products) products=data.products;
+      if(data.internalTrades) internalTrades=data.internalTrades;
       saveLS();
       toast('가져오기 완료!','success');
       refreshAll();
@@ -2010,7 +2320,7 @@ async function importData(e){
 
 function clearAll(){
   if(!confirm('⚠️ 모든 데이터를 초기화합니다. 계속할까요?')) return;
-  orders=[];invLogs=[];resetDealers();
+  orders=[];invLogs=[];internalTrades=[];resetDealers();
   saveLS();
   toast('초기화 완료','info');
   refreshAll();
