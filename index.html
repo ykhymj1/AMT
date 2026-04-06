@@ -665,7 +665,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
           <option value="">전체</option>
           <option value="pending">미수금</option>
           <option value="done">수금완료</option>
-          <option value="overdue">연체</option>
+          <option value="overdue">미수</option>
         </select>
       </div>
     </div>
@@ -797,7 +797,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
           <option value="">전체</option>
           <option value="pending">미수금</option>
           <option value="done">수금완료</option>
-          <option value="overdue">연체</option>
+          <option value="overdue">미수</option>
         </select>
       </div>
     </div>
@@ -1160,7 +1160,7 @@ function saveLS(){
   localStorage.setItem(LS_PRODS,JSON.stringify(products));
   localStorage.setItem(LS_INTERNAL,JSON.stringify(internalTrades));
   // 감사 로그는 최근 500건만 유지
-  if(auditLogs.length>500) auditLogs=auditLogs.slice(-500);
+  if(auditLogs.length>1000) auditLogs=auditLogs.slice(-1000);
   localStorage.setItem(LS_AUDIT,JSON.stringify(auditLogs));
 }
 
@@ -1259,13 +1259,20 @@ function chMonth(d){
 function goToday(){ curMonth=new Date().toISOString().slice(0,7); document.getElementById('dashMonth').value=curMonth; renderDash(); }
 
 function chRecMonth(d){
-  const [y,m]=recCalMon.split('-').map(Number);
+  const selEl=document.getElementById('recCalMonth');
+  const cur=(selEl&&selEl.value)?selEl.value:recCalMon;
+  const [y,m]=cur.split('-').map(Number);
   const nd=new Date(y,m-1+d,1);
   recCalMon=nd.toISOString().slice(0,7);
-  document.getElementById('recCalMonth').value=recCalMon;
+  if(selEl) selEl.value=recCalMon;
   renderRecCalendar();
 }
-function goRecToday(){ recCalMon=new Date().toISOString().slice(0,7); document.getElementById('recCalMonth').value=recCalMon; renderRecCalendar(); }
+function goRecToday(){
+  recCalMon=new Date().toISOString().slice(0,7);
+  const selEl=document.getElementById('recCalMonth');
+  if(selEl) selEl.value=recCalMon;
+  renderRecCalendar();
+}
 
 function chRptMonth(d){
   const [y,m]=rptMon.split('-').map(Number);
@@ -1532,7 +1539,7 @@ function renderDash(){
   document.getElementById('dashReceivable').innerHTML=`
     <div style="display:flex;flex-direction:column;gap:10px">
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--red-light);border-radius:6px">
-        <span style="font-size:.8rem;color:var(--red);font-weight:600">⚠ 연체</span>
+        <span style="font-size:.8rem;color:var(--red);font-weight:600">⚠ 미수</span>
         <span style="font-family:'JetBrains Mono',monospace;color:var(--red);font-weight:700">${fmt(overdue.reduce((s,o)=>s+o.total+(o.fee||0),0))}원</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--yellow-light);border-radius:6px">
@@ -1575,7 +1582,7 @@ function renderDash(){
 function statusBadge(o){
   const t=today();
   if(o.status==='done') return '<span class="badge badge-done">✓ 수금완료</span>';
-  if(o.dueDate<t) return '<span class="badge badge-overdue">연체</span>';
+  if(o.dueDate<t) return '<span class="badge badge-overdue">미수</span>';
   return '<span class="badge badge-pending">예정</span>';
 }
 
@@ -1611,7 +1618,6 @@ function renderOrderTableHtml(list, compact=false){
         <td>${statusBadge(o)}</td>
         ${!compact?`<td class="td-c">
           <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap">
-            ${o.status!=='done'?`<button class="btn btn-success btn-xs" onclick="markDone('${o.id}')">✓수금</button>`:''}
             <button class="btn btn-ghost btn-xs" onclick="editOrderNote('${o.id}')">메모</button>
             <button class="btn btn-danger btn-xs" onclick="delOrder('${o.id}')">✕</button>
           </div>
@@ -1643,6 +1649,7 @@ function renderOrders(){
 async function markDone(id){
   const o=orders.find(x=>x.id===id);
   if(!o) return;
+  if(!confirm(`수금 처리하시겠습니까?\n\n대리점: ${o.dealerName}\n제품: ${o.product} ${fmt(o.qty)}개\n금액: ${fmt(o.total+(o.fee||0))}원\n수금예정일: ${o.dueDate}`)) return;
   o.status='done'; o.collectedAt=today();
   addAuditLog('status','수금',`수금완료: ${o.dealerName} ${o.product} ${fmt(o.total)}원 (수금예정일:${o.dueDate})`);
   saveLS();
@@ -1776,7 +1783,7 @@ function showDayDetail(ds){
         <td class="td-mono td-r">${o.fee?fmt(o.fee):'-'}</td>
         <td class="td-mono td-r" style="font-weight:700">${fmt(o.total+(o.fee||0))}</td>
         <td>${statusBadge(o)}</td>
-        <td>${o.status!=='done'?`<button class="btn btn-xs" style="background:var(--red);color:#fff;border-color:var(--red)" onclick="markDone('${o.id}')">✓ 수금완료</button>`:
+        <td>${o.status!=='done'?`<button class="btn btn-xs" style="background:var(--red);color:#fff;border-color:var(--red)" onclick="markDone('${o.id}')">✓ 수금</button>`:
           `<button class="btn btn-ghost btn-xs" onclick="cancelDone('${o.id}')">취소</button>`}</td>
       </tr>`).join('')}
       </tbody>
@@ -1800,10 +1807,11 @@ function quickToggle(id,e){
 async function cancelDone(id){
   const o=orders.find(x=>x.id===id);
   if(!o) return;
+  if(!confirm(`수금을 취소하시겠습니까?\n\n대리점: ${o.dealerName}\n제품: ${o.product} ${fmt(o.qty)}개\n금액: ${fmt(o.total+(o.fee||0))}원`)) return;
   o.status='pending'; delete o.collectedAt;
   addAuditLog('status','수금',`수금완료 취소: ${o.dealerName} ${o.product} ${fmt(o.total)}원`);
   saveLS(); await fbSaveDoc('orders',id,o);
-  toast('수금완료 취소','info');
+  toast('수금 취소 처리','info');
   refreshAll();
 }
 
@@ -1858,7 +1866,7 @@ function renderRecList(){
           <td class="td-mono td-r" style="font-weight:700">${fmt(o.total+(o.fee||0))}</td>
           <td>${statusBadge(o)}</td>
           <td><div style="display:flex;gap:4px">
-            ${o.status!=='done'?`<button class="btn btn-success btn-xs" onclick="markDone('${o.id}')">✓수금</button>`
+            ${o.status!=='done'?`<button class="btn btn-xs" style="background:var(--red);color:#fff;border-color:var(--red)" onclick="markDone('${o.id}')">✓ 수금</button>`
               :`<button class="btn btn-ghost btn-xs" onclick="cancelDone('${o.id}')">취소</button>`}
           </div></td>
         </tr>`).join('')}
@@ -1882,7 +1890,14 @@ function renderRecList(){
 
 async function markAllOnDate(ds){
   const items=orders.filter(o=>o.dueDate===ds&&o.status!=='done');
-  for(const o of items){ o.status='done'; o.collectedAt=today(); await fbSaveDoc('orders',o.id,o); }
+  if(!items.length) return;
+  const totalAmt=items.reduce((s,o)=>s+o.total+(o.fee||0),0);
+  if(!confirm(`${ds} 미수금 전체를 수금 처리하시겠습니까?\n\n건수: ${items.length}건\n합계: ${fmt(totalAmt)}원`)) return;
+  for(const o of items){
+    o.status='done'; o.collectedAt=today();
+    addAuditLog('status','수금',`수금완료: ${o.dealerName} ${o.product} ${fmt(o.total)}원`);
+    await fbSaveDoc('orders',o.id,o);
+  }
   saveLS();
   toast(`${ds} 전체 수금완료 처리!`,'success');
   refreshAll();
@@ -2559,6 +2574,8 @@ function addAuditLog(action, category, detail, before=null){
     before     // 삭제/수정 전 원본 (선택)
   };
   auditLogs.push(entry);
+  // 1000개 초과시 오래된 것부터 자동 삭제
+  if(auditLogs.length>1000) auditLogs=auditLogs.slice(-1000);
 }
 
 function renderAuditLog(){
@@ -2581,7 +2598,7 @@ function renderAuditLog(){
   listEl.innerHTML=`<div class="table-wrap"><table>
     <thead><tr><th>일시</th><th>분류</th><th>액션</th><th>내용</th></tr></thead>
     <tbody>
-    ${list.slice(0,200).map(l=>{
+    ${list.slice(0,1000).map(l=>{
       const dt=new Date(l.at);
       const dtStr=(dt.getMonth()+1)+'/'+(dt.getDate())+' '
         +dt.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
