@@ -954,6 +954,18 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
     </div>
     <hr class="divider">
     <div class="setting-section">
+      <h3>☁️ Firebase 백업 관리</h3>
+      <p style="font-size:.78rem;color:var(--text2);margin-bottom:12px">매일 자동으로 백업됩니다. 최대 1년치(365일) 보관 후 자동 삭제.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <button class="btn btn-outline btn-sm" onclick="fbBackupNow()">💾 지금 백업</button>
+        <button class="btn btn-ghost btn-sm" onclick="fbLoadBackupList()">📋 백업 목록 보기</button>
+      </div>
+      <div id="backupListWrap" style="display:none">
+        <div id="backupList"></div>
+      </div>
+    </div>
+    <hr class="divider">
+    <div class="setting-section">
       <h3>📋 수금조건 코드 안내</h3>
       <div class="table-wrap">
         <table>
@@ -1219,10 +1231,13 @@ function init(){
   const cm=curMonth;
   ['ofMonth','rfMonth','invFilterM','itFilterM'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=cm; });
 
-  // Firebase 자동 동기화
+  // 1년 이전 데이터 자동 정리
+  purgeOldData();
+
+  // Firebase 자동 동기화 + 일 1회 자동 백업
   const fb=window._fb;
   if(fb&&fb.ready){
-    fbSync().then(()=>fbStartListener());
+    fbSync().then(()=>{ fbStartListener(); fbBackupToday(); });
   }
 
   refreshAll();
@@ -2300,6 +2315,131 @@ function saveFbConfig(){
 let _fbListener = null;  // 실시간 리스너 핸들
 
 // 전체 데이터를 단일 노드에 저장 (타임스탬프 포함)
+/* ═══════════════════════════════════════════════════════
+   FIREBASE 백업 히스토리 (1년치)
+═══════════════════════════════════════════════════════ */
+
+// 오늘 날짜 백업 저장 (하루 1회 자동 + 수동)
+async function fbBackupToday(force=false){
+  const fb=window._fb; if(!fb||!fb.ready) return;
+  const ds=today();
+  const lastBackup=localStorage.getItem('amt_lastBackup')||'';
+  if(!force && lastBackup===ds) return; // 오늘 이미 백업됨
+
+  const payload={ orders, invLogs, dealers, products, internalTrades, backedUpAt:new Date().toISOString() };
+  try{
+    await fb.set(fb.ref(fb.db,'amt_backup/'+ds), payload);
+    localStorage.setItem('amt_lastBackup', ds);
+    // 1년 이전 백업 자동 삭제
+    await fbPurgeOldBackups();
+    console.log('[백업] '+ds+' 백업 완료');
+  }catch(e){ console.warn('백업 실패',e); }
+}
+
+// 수동 백업 (버튼 클릭)
+async function fbBackupNow(){
+  const fb=window._fb; if(!fb||!fb.ready){ toast('Firebase 미연결','error'); return; }
+  toast('백업 중...','info');
+  await fbBackupToday(true);
+  toast('✅ 백업 완료! ('+today()+')','success');
+}
+
+// 1년 이전 백업 자동 삭제
+async function fbPurgeOldBackups(){
+  const fb=window._fb; if(!fb||!fb.ready) return;
+  const cutoff=new Date();
+  cutoff.setFullYear(cutoff.getFullYear()-1);
+  const cutoffStr=cutoff.toISOString().slice(0,10);
+  try{
+    const snap=await fb.get(fb.ref(fb.db,'amt_backup'));
+    if(!snap.exists()) return;
+    const keys=Object.keys(snap.val()||{});
+    for(const k of keys){
+      if(k < cutoffStr){
+        await fb.set(fb.ref(fb.db,'amt_backup/'+k), null);
+        console.log('[백업정리] '+k+' 삭제');
+      }
+    }
+  }catch(e){ console.warn('백업 정리 실패',e); }
+}
+
+// 백업 목록 불러오기
+async function fbLoadBackupList(){
+  const fb=window._fb; if(!fb||!fb.ready){ toast('Firebase 미연결','error'); return; }
+  const wrap=document.getElementById('backupListWrap');
+  const listEl=document.getElementById('backupList');
+  listEl.innerHTML='<p style="color:var(--text2);font-size:.82rem">불러오는 중...</p>';
+  wrap.style.display='block';
+  try{
+    const snap=await fb.get(fb.ref(fb.db,'amt_backup'));
+    if(!snap.exists()){ listEl.innerHTML='<p style="color:var(--text2);font-size:.82rem">저장된 백업이 없습니다.</p>'; return; }
+    const keys=Object.keys(snap.val()||{}).sort().reverse(); // 최신순
+    listEl.innerHTML=`
+      <div class="table-wrap"><table>
+        <thead><tr><th>백업 날짜</th><th>백업 시각</th><th>발주건수</th><th style="text-align:center">복구</th></tr></thead>
+        <tbody>
+        ${keys.map(k=>{
+          const v=snap.val()[k];
+          const t=v.backedUpAt?new Date(v.backedUpAt).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}):'-';
+          const cnt=v.orders?v.orders.length:0;
+          return `<tr>
+            <td class="td-mono">${k}</td>
+            <td class="td-mono">${t}</td>
+            <td class="td-mono td-r">${cnt}건</td>
+            <td class="td-c"><button class="btn btn-xs" style="background:var(--red);color:#fff;border-color:var(--red)" onclick="fbRestoreBackup('${k}')">↩ 복구</button></td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table></div>
+      <p style="font-size:.75rem;color:var(--text3);margin-top:6px">총 ${keys.length}개 백업 보관 중</p>
+    `;
+  }catch(e){ listEl.innerHTML='<p style="color:var(--red);font-size:.82rem">불러오기 실패: '+e.message+'</p>'; }
+}
+
+// 선택한 날짜로 복구
+async function fbRestoreBackup(ds){
+  if(!confirm(`⚠️ ${ds} 백업으로 복구하시겠습니까?
+현재 데이터는 먼저 자동 백업됩니다.`)) return;
+  const fb=window._fb; if(!fb||!fb.ready) return;
+  // 복구 전 현재 상태 백업
+  await fbBackupToday(true);
+  try{
+    const snap=await fb.get(fb.ref(fb.db,'amt_backup/'+ds));
+    if(!snap.exists()){ toast('백업 데이터 없음','error'); return; }
+    const data=snap.val();
+    if(data.orders) orders=data.orders;
+    if(data.invLogs){ invLogs=data.invLogs; invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; }); }
+    if(data.dealers) dealers=data.dealers;
+    if(data.products) products=data.products;
+    if(data.internalTrades) internalTrades=data.internalTrades;
+    saveLS();
+    await fbSaveAll();
+    toast('✅ '+ds+' 백업으로 복구 완료!','success');
+    refreshAll();
+    document.getElementById('backupListWrap').style.display='none';
+  }catch(e){ toast('복구 실패: '+e.message,'error'); }
+}
+
+// 1년 이전 데이터 자동 삭제
+function purgeOldData(){
+  const cutoff=new Date();
+  cutoff.setFullYear(cutoff.getFullYear()-1);
+  const cutoffStr=cutoff.toISOString().slice(0,10); // YYYY-MM-DD
+
+  const before={orders:orders.length, invLogs:invLogs.length, internalTrades:internalTrades.length};
+
+  orders        = orders.filter(o=>(o.orderDate||'') >= cutoffStr);
+  invLogs       = invLogs.filter(i=>(i.date||'') >= cutoffStr);
+  internalTrades= internalTrades.filter(t=>(t.date||'') >= cutoffStr);
+
+  const deleted=(before.orders-orders.length)+(before.invLogs-invLogs.length)+(before.internalTrades-internalTrades.length);
+  if(deleted>0){
+    console.log(`[자동정리] 1년 이전 데이터 ${deleted}건 삭제 (기준일: ${cutoffStr})`);
+    saveLS();
+  }
+  return deleted;
+}
+
 async function fbSaveAll(){
   const fb=window._fb; if(!fb||!fb.ready) return;
   const now=new Date().toISOString();
