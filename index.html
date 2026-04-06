@@ -1245,8 +1245,31 @@ function populateSelects(){
   // 발주 - 대리점
   const oDealer=document.getElementById('oDealer');
   const cv=oDealer.value;
+  const curProd=document.getElementById('oProduct').value; // 현재 선택된 제품 기억
   oDealer.innerHTML='<option value="">-- 대리점 선택 --</option>';
   dealers.forEach(d=>{ const o=document.createElement('option'); o.value=d.id; o.textContent=d.name; if(d.id===cv) o.selected=true; oDealer.appendChild(o); });
+
+  // 대리점이 이미 선택돼 있으면 제품 목록 즉시 갱신 (단가 변경 반영)
+  if(cv){
+    const d=getDealerById(cv);
+    const pEl=document.getElementById('oProduct');
+    pEl.innerHTML='<option value="">-- 제품 선택 --</option>';
+    if(d){
+      d.products.forEach(p=>{ const o=document.createElement('option'); o.value=p.product; o.textContent=p.product; if(p.product===curProd) o.selected=true; pEl.appendChild(o); });
+      document.getElementById('oFeeGroup').style.display=d.fee>0?'block':'none';
+      document.getElementById('oFee').value=d.fee||0;
+      // 제품도 선택돼 있으면 단가 자동 갱신
+      if(curProd && d.products.find(p=>p.product===curProd)){
+        const orderDate=document.getElementById('oDate').value;
+        if(orderDate){
+          const price=getPrice(d,curProd,orderDate);
+          setInputFmt(document.getElementById('oPrice'), price);
+          oCalcTotal();
+          document.getElementById('oDue').value=calcDue(orderDate,d.term,cv);
+        }
+      }
+    }
+  }
 
   // 필터 대리점들
   ['ofDealer','rfDealer'].forEach(id=>{
@@ -2027,8 +2050,8 @@ function renderDealerCards(){
       <div class="dealer-card-header">
         <div class="dealer-name">${d.name}</div>
         <div class="dealer-actions">
-          <button class="btn btn-outline btn-xs" onclick="openDealerModal('${d.id}')">✏️</button>
-          <button class="btn btn-danger btn-xs" onclick="deleteDealer('${d.id}')">✕</button>
+          <button class="btn btn-outline btn-xs" onclick="openDealerModal('${d.id}')" style="padding:5px 12px">✏️ 수정</button>
+          <button class="btn btn-danger btn-xs" onclick="deleteDealer('${d.id}')" style="padding:5px 12px;margin-left:8px">🗑️ 삭제</button>
         </div>
       </div>
       <div class="dealer-products">${d.products.map(p=>`<span class="badge" style="background:${pColors[p.product]||'var(--gray)'}20;color:${pColors[p.product]||'var(--gray)'}">${p.product} ${fmt(p.price)}원</span>`).join('')}</div>
@@ -2084,18 +2107,18 @@ function addDmProduct(prod='',price='',priceOld='',priceOldUntil=''){
     </div>
     <div class="form-group">
       <label>단가 (현재)</label>
-      <input class="dp-price" type="number" value="${price}" placeholder="0">
+      <input class="dp-price" type="text" inputmode="numeric" value="${price?Number(price).toLocaleString('ko-KR'):''}" placeholder="0" oninput="fmtInput(this)">
     </div>
     <div class="form-group">
       <label>구단가 (선택)</label>
-      <input class="dp-pold" type="number" value="${priceOld||''}" placeholder="없으면 빈칸">
+      <input class="dp-pold" type="text" inputmode="numeric" value="${priceOld?Number(priceOld).toLocaleString('ko-KR'):''}" placeholder="없으면 빈칸" oninput="fmtInput(this)">
     </div>
     <div class="form-group">
       <label>구단가 적용까지 (YYYY-MM)</label>
       <input class="dp-until" type="month" value="${priceOldUntil||''}">
     </div>
     <div class="form-group w-auto">
-      <button class="btn btn-danger btn-xs" onclick="this.closest('.form-grid').remove()" style="margin-top:18px">✕</button>
+      <button class="btn btn-danger btn-xs" onclick="this.closest('.form-grid').remove()" style="margin-top:18px">✕ 삭제</button>
     </div>
   `;
   wrap.appendChild(row);
@@ -2112,8 +2135,8 @@ async function saveDealer(){
   const prods=[];
   document.querySelectorAll('#dmProducts .form-grid').forEach(row=>{
     const p=row.querySelector('.dp-prod').value.trim().toUpperCase();
-    const price=parseInt(row.querySelector('.dp-price').value)||0;
-    const pOld=parseInt(row.querySelector('.dp-pold').value)||0;
+    const price=parseInput(row.querySelector('.dp-price'));
+    const pOld=parseInput(row.querySelector('.dp-pold'));
     const until=row.querySelector('.dp-until').value;
     if(p&&price>0){
       const item={product:p,price};
@@ -2139,8 +2162,20 @@ async function saveDealer(){
 
   saveLS();
   closeDealerModal();
-  toast('대리점 저장 완료!','success');
+  toast('대리점 저장 완료! 발주입력 단가가 업데이트되었습니다.','success');
+
+  // 발주입력 드롭다운 강제 갱신 — 현재 선택된 대리점·제품 유지하면서 단가 반영
   refreshAll();
+  const curDealer=document.getElementById('oDealer').value;
+  if(curDealer){
+    oOnDealer();  // 제품 목록 재로드
+    // 기존 선택된 제품이 있으면 단가도 재로드
+    const curProd=document.getElementById('oProduct').value;
+    if(curProd){
+      document.getElementById('oProduct').value=curProd;
+      oOnProduct();
+    }
+  }
 }
 
 async function deleteDealer(id){
