@@ -88,6 +88,7 @@ body{
   font-family:'Noto Sans KR',sans-serif;
   min-height:100vh;
   -webkit-font-smoothing:antialiased;
+  font-weight:500;
 }
 
 /* ── Scrollbar ── */
@@ -144,15 +145,15 @@ body{
 }
 .nav::-webkit-scrollbar{display:none;}
 .nav-btn{
-  background:none;border:none;color:var(--text3);
+  background:none;border:none;color:var(--text2);
   padding:0 14px;height:var(--nav-h);
-  font-family:inherit;font-size:.82rem;font-weight:500;
+  font-family:inherit;font-size:.82rem;font-weight:700;
   cursor:pointer;white-space:nowrap;
   border-bottom:2.5px solid transparent;
   transition:all .18s;display:flex;align-items:center;gap:5px;
 }
-.nav-btn:hover{color:var(--text2);}
-.nav-btn.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:600;}
+.nav-btn:hover{color:var(--text);}
+.nav-btn.active{color:var(--blue);border-bottom-color:var(--blue);font-weight:800;}
 
 /* ═══ MAIN LAYOUT ═══ */
 .main{padding:18px;max-width:1440px;margin:0 auto;}
@@ -174,7 +175,7 @@ body{
   margin-bottom:16px;flex-wrap:wrap;gap:8px;
 }
 .card-title{
-  font-size:.82rem;font-weight:700;color:var(--text2);
+  font-size:.84rem;font-weight:800;color:var(--text);
   text-transform:uppercase;letter-spacing:.8px;
   display:flex;align-items:center;gap:7px;
 }
@@ -200,13 +201,13 @@ body{
   content:'';position:absolute;top:0;left:0;right:0;
   height:3px;background:var(--kpi-color,var(--blue));
 }
-.kpi-label{font-size:.72rem;color:var(--text3);font-weight:500;margin-bottom:6px;}
+.kpi-label{font-size:.74rem;color:var(--text2);font-weight:700;margin-bottom:6px;}
 .kpi-value{
   font-family:'JetBrains Mono',monospace;
-  font-size:1.4rem;font-weight:700;
+  font-size:1.4rem;font-weight:800;
   color:var(--kpi-color,var(--text));line-height:1.1;
 }
-.kpi-sub{font-size:.7rem;color:var(--text3);margin-top:4px;}
+.kpi-sub{font-size:.72rem;color:var(--text2);margin-top:4px;font-weight:600;}
 
 /* ═══ BUTTONS ═══ */
 .btn{
@@ -235,14 +236,14 @@ body{
 .form-grid{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;align-items:flex-end;}
 .form-group{display:flex;flex-direction:column;gap:4px;flex:1;min-width:120px;}
 .form-group.w-auto{flex:0 0 auto;}
-.form-group label{font-size:.72rem;font-weight:600;color:var(--text2);}
+.form-group label{font-size:.75rem;font-weight:800;color:var(--text);}
 .form-group label .req{color:var(--red);margin-left:2px;}
 input,select,textarea{
   background:var(--white);border:1.5px solid var(--border);
   border-radius:var(--radius-sm);color:var(--text);
-  font-family:inherit;font-size:.85rem;padding:8px 10px;
+  font-family:inherit;font-size:.88rem;padding:8px 10px;
   outline:none;transition:border-color .15s,box-shadow .15s;
-  width:100%;
+  width:100%;font-weight:700;
 }
 input:focus,select:focus,textarea:focus{
   border-color:var(--blue);
@@ -254,18 +255,18 @@ select option{background:#fff;}
 
 /* ═══ TABLE ═══ */
 .table-wrap{overflow-x:auto;border-radius:var(--radius-sm);border:1px solid var(--border);}
-table{width:100%;border-collapse:collapse;font-size:.82rem;}
+table{width:100%;border-collapse:collapse;font-size:.83rem;font-weight:600;}
 thead th{
-  background:var(--surface2);color:var(--text2);
-  font-weight:700;font-size:.7rem;text-transform:uppercase;letter-spacing:.5px;
+  background:var(--surface2);color:var(--text);
+  font-weight:800;font-size:.72rem;text-transform:uppercase;letter-spacing:.5px;
   padding:10px 12px;text-align:left;
   border-bottom:1px solid var(--border);white-space:nowrap;
 }
 tbody tr{border-bottom:1px solid var(--border);transition:background .12s;}
 tbody tr:last-child{border-bottom:none;}
 tbody tr:hover{background:var(--blue-light);}
-tbody td{padding:9px 12px;vertical-align:middle;}
-.td-mono{font-family:'JetBrains Mono',monospace;font-size:.78rem;}
+tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
+.td-mono{font-family:'JetBrains Mono',monospace;font-size:.8rem;font-weight:700;}
 .td-r{text-align:right;}
 .td-c{text-align:center;}
 
@@ -603,15 +604,15 @@ tbody td{padding:9px 12px;vertical-align:middle;}
     <div class="form-grid">
       <div class="form-group">
         <label>수량 <span class="req">*</span></label>
-        <input type="number" id="oQty" min="1" placeholder="0" oninput="oCalcTotal()">
+        <input type="text" inputmode="numeric" id="oQty" min="1" placeholder="0" oninput="fmtInput(this);oCalcTotal()">
       </div>
       <div class="form-group">
         <label>단가 (VAT포함)</label>
-        <input type="number" id="oPrice" placeholder="자동" oninput="oCalcTotal()">
+        <input type="text" inputmode="numeric" id="oPrice" placeholder="자동" oninput="fmtInput(this);oCalcTotal()">
       </div>
       <div class="form-group">
         <label>합계금액</label>
-        <input type="number" id="oTotal" readonly>
+        <input type="text" id="oTotal" readonly>
       </div>
     </div>
     <div class="form-grid">
@@ -694,17 +695,17 @@ tbody td{padding:9px 12px;vertical-align:middle;}
       </div>
       <div class="form-group">
         <label>수량 <span class="req">*</span></label>
-        <input type="number" id="itQty" min="1" placeholder="0" oninput="itCalcTotal()">
+        <input type="text" inputmode="numeric" id="itQty" placeholder="0" oninput="fmtInput(this);itCalcTotal()">
       </div>
     </div>
     <div class="form-grid">
       <div class="form-group">
         <label>단가 (수정가능) <span class="req">*</span></label>
-        <input type="number" id="itPrice" placeholder="0" oninput="itCalcTotal()">
+        <input type="text" inputmode="numeric" id="itPrice" placeholder="0" oninput="fmtInput(this);itCalcTotal()">
       </div>
       <div class="form-group">
         <label>합계금액</label>
-        <input type="number" id="itTotal" readonly style="font-weight:700;color:var(--internal)">
+        <input type="text" id="itTotal" readonly style="font-weight:700;color:var(--internal)">
       </div>
       <div class="form-group">
         <label>메모</label>
@@ -1294,7 +1295,7 @@ function oOnProduct(){
   if(!dealerId||!product||!orderDate) return;
   const d=getDealerById(dealerId);
   const price=getPrice(d,product,orderDate);
-  document.getElementById('oPrice').value=price;
+  setInputFmt(document.getElementById('oPrice'), price);
   oCalcTotal();
   document.getElementById('oDue').value=calcDue(orderDate,d.term,dealerId);
 }
@@ -1304,17 +1305,17 @@ function oCalc(){
 }
 
 function oCalcTotal(){
-  const q=parseInt(document.getElementById('oQty').value)||0;
-  const p=parseInt(document.getElementById('oPrice').value)||0;
-  document.getElementById('oTotal').value=q*p;
+  const q=parseInput(document.getElementById('oQty'));
+  const p=parseInput(document.getElementById('oPrice'));
+  setInputFmt(document.getElementById('oTotal'), q*p);
 }
 
 async function saveOrder(){
   const orderDate=document.getElementById('oDate').value;
   const dealerId=document.getElementById('oDealer').value;
   const product=document.getElementById('oProduct').value;
-  const qty=parseInt(document.getElementById('oQty').value)||0;
-  const price=parseInt(document.getElementById('oPrice').value)||0;
+  const qty=parseInput(document.getElementById('oQty'));
+  const price=parseInput(document.getElementById('oPrice'));
   const memo=document.getElementById('oMemo').value;
   const dealer=getDealerById(dealerId);
 
@@ -1890,16 +1891,16 @@ function itOnProduct(){
 }
 
 function itCalcTotal(){
-  const q=parseInt(document.getElementById('itQty').value)||0;
-  const p=parseInt(document.getElementById('itPrice').value)||0;
-  document.getElementById('itTotal').value=q*p;
+  const q=parseInput(document.getElementById('itQty'));
+  const p=parseInput(document.getElementById('itPrice'));
+  setInputFmt(document.getElementById('itTotal'), q*p);
 }
 
 async function saveInternal(){
   const date=document.getElementById('itDate').value;
   const product=document.getElementById('itProduct').value;
-  const qty=parseInt(document.getElementById('itQty').value)||0;
-  const price=parseInt(document.getElementById('itPrice').value)||0;
+  const qty=parseInput(document.getElementById('itQty'));
+  const price=parseInput(document.getElementById('itPrice'));
   const memo=document.getElementById('itMemo').value;
   const total=qty*price;
 
@@ -2346,6 +2347,21 @@ function recTab(name,btn){
 }
 
 function closeRecModal(){ document.getElementById('recModal').classList.remove('open'); }
+
+/* ═══════════════════════════════════════════════════════
+   COMMA INPUT UTILS
+═══════════════════════════════════════════════════════ */
+function fmtInput(el){
+  const raw=el.value.replace(/[^0-9]/g,'');
+  if(raw==='') { el.value=''; return; }
+  el.value=Number(raw).toLocaleString('ko-KR');
+}
+function parseInput(el){
+  return parseInt((el.value||'').replace(/,/g,''))||0;
+}
+function setInputFmt(el, num){
+  el.value = num ? Number(num).toLocaleString('ko-KR') : '';
+}
 
 /* ═══════════════════════════════════════════════════════
    UTILS
