@@ -1,5 +1,5 @@
 // AMT Service Worker
-const CACHE = 'amt-v2';
+const CACHE = 'amt-v3';
 const ASSETS = [
   '/AMT/',
   '/AMT/index.html',

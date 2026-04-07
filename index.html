@@ -768,12 +768,12 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
           <select id="txType" onchange="txTypeChange()">
             <option value="">-- 선택 --</option>
             <option value="KY_to_AMT">KY → AMT (대금지급/선수금)</option>
-            <option value="AMT_to_BEST">AMT → BEST (물품공급)</option>
-            <option value="BEST_to_AMT">BEST → AMT (대금지급/선수금)</option>
-            <option value="KY_to_BEST">KY → BEST (물품공급)</option>
-            <option value="BEST_to_KY">BEST → KY (대금지급/선수금)</option>
             <option value="AMT_loan_KY">AMT → KY (무이자대출/선수금반환)</option>
-            <option value="KY_loan_AMT">KY → AMT (무이자대출/선수금반환)</option>
+            <option value="BEST_to_AMT">BEST → AMT (대금지급/선수금)</option>
+            <option value="AMT_loan_BEST">AMT → BEST (무이자대출/선수금반환)</option>
+            <option value="KY_to_BEST">KY → BEST (대금지급/선수금)</option>
+            <option value="KY_loan_BEST">KY → BEST (무이자대출/선수금반환)</option>
+            <option value="BEST_to_KY">BEST → KY (대금지급/선수금)</option>
           </select>
         </div>
         <div class="form-group">
@@ -2537,17 +2537,18 @@ function renderInternalList(){
 /* ═══════════════════════════════════════════════════════
    채권채무 관리 (TX)
    txType 값 의미:
-   AMT_to_KY  : AMT가 KY에 물품공급 → AMT채권+, KY채무+
-   KY_to_AMT  : KY가 AMT에 돈 송금  → AMT채권-, KY채무-
-   AMT_to_BEST: AMT→BEST 물품공급
-   BEST_to_AMT: BEST→AMT 송금
-   KY_to_BEST : KY→BEST 물품공급
-   BEST_to_KY : BEST→KY 송금
-   AMT_loan_KY: AMT→KY 대출      → AMT채권+, KY채무+
-   KY_loan_AMT: KY→AMT 대출      → AMT채권-, KY채무-
-   adj_AMT_KY : 조정
-   adj_AMT_BEST: 조정
-   adj_KY_BEST: 조정
+   AMT_to_KY    : AMT가 KY에 물품공급 → AMT채권+, KY채무+
+   KY_to_AMT    : KY→AMT 대금지급/선수금 → AMT채권-, KY채무-
+   AMT_loan_KY  : AMT→KY 무이자대출/선수금반환 → AMT채무감소 → balance+=
+   BEST_to_AMT  : BEST→AMT 대금지급/선수금 → AMT↔BEST 채권-
+   AMT_loan_BEST: AMT→BEST 무이자대출/선수금반환 → AMT↔BEST 채무감소 → balance+=
+   KY_to_BEST   : KY→BEST 대금지급/선수금 → KY↔BEST 채권-
+   KY_loan_BEST : KY→BEST 무이자대출/선수금반환 → KY↔BEST 채무감소 → balance+=
+   BEST_to_KY   : BEST→KY 대금지급/선수금 → KY↔BEST 채권+
+   KY_loan_AMT  : KY→AMT 무이자대출/선수금반환 → AMT채권-, KY채무+
+   adj_AMT_KY   : 조정
+   adj_AMT_BEST : 조정
+   adj_KY_BEST  : 조정
    best_return_AMT: BEST에서 AMT 반품
    best_return_KY : BEST에서 KY 반품
 ═══════════════════════════════════════════════════════ */
@@ -2568,10 +2569,11 @@ function txTab(name, btn){
 // 거래 유형 레이블
 function txTypeLabel(type){
   const map={
-    'AMT_to_KY':'AMT→KY 물품공급','KY_to_AMT':'KY→AMT 대금/선수금',
-    'AMT_to_BEST':'AMT→BEST 물품공급','BEST_to_AMT':'BEST→AMT 대금송금',
-    'KY_to_BEST':'KY→BEST 물품공급','BEST_to_KY':'BEST→KY 대금송금',
-    'AMT_loan_KY':'AMT→KY 무이자대출/선수금반환','KY_loan_AMT':'KY→AMT 무이자대출/선수금반환',
+    'AMT_to_KY':'AMT→KY 물품공급','KY_to_AMT':'KY→AMT (대금지급/선수금)',
+    'AMT_to_BEST':'AMT→BEST 물품공급','BEST_to_AMT':'BEST→AMT (대금지급/선수금)',
+    'KY_to_BEST':'KY→BEST (대금지급/선수금)','BEST_to_KY':'BEST→KY (대금지급/선수금)',
+    'AMT_loan_KY':'AMT→KY (무이자대출/선수금반환)','KY_loan_AMT':'KY→AMT (무이자대출/선수금반환)',
+    'AMT_loan_BEST':'AMT→BEST (무이자대출/선수금반환)','KY_loan_BEST':'KY→BEST (무이자대출/선수금반환)',
     'adj_AMT_KY':'AMT↔KY 조정','adj_AMT_BEST':'AMT↔BEST 조정','adj_KY_BEST':'KY↔BEST 조정',
     'best_return_AMT':'BEST←AMT 반품','best_return_KY':'BEST←KY 반품',
     'ky_supply_AMT_KY':'AMT→KY 물품공급(내부)'
@@ -4072,10 +4074,10 @@ document.addEventListener('visibilitychange',()=>{
 // START
 window.addEventListener('DOMContentLoaded',()=>{ init(); handleResize(); });
 
-// PWA Service Worker 등록
-if('serviceWorker' in navigator){
+// PWA Service Worker 등록 (github.io 배포 환경에서만)
+if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('sw.js')
+    navigator.serviceWorker.register('/AMT/sw.js')
       .then(r=>console.log('SW registered:',r.scope))
       .catch(e=>console.warn('SW failed:',e));
   });
