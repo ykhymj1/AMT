@@ -1817,6 +1817,7 @@ function renderDash(){
         <div class="kpi-sub"><span style="color:var(--amt)">AMT</span> / <span style="color:var(--ky)">KY</span></div>
       </div>`;
     }).join('')}
+    ${renderVatKpiCards()}
   `;
 
   document.getElementById('dashReceivable').innerHTML=`
@@ -3628,11 +3629,285 @@ async function importData(e){
   e.target.value='';
 }
 
+/* ═══════════════════════════════════════════════════════
+   부가가치세 (VAT) 예상 계산
+   법인 신고주기: 1월말(전년7~12월), 4월말(1~3월), 7월말(4~6월), 10월말(7~9월)
+═══════════════════════════════════════════════════════ */
+function getVatPeriodInfo(){
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = now.getMonth()+1; // 1~12
+
+  // 현재 어느 신고기간인지 결정 (신고 마감 기준)
+  // 10월말 신고: 7~9월 (3분기)
+  // 1월말 신고: 전년 7~12월 (2기) → 다음해 1월 신고
+  // 4월말 신고: 1~3월 (1분기)
+  // 7월말 신고: 4~6월 (2분기)
+  let periodLabel, startYm, endYm, dueDate;
+
+  if(m===1 || m===2){
+    // 1월 신고기간: 전년 7~12월
+    periodLabel = `${y-1}년 2기 (전년 7~12월)`;
+    startYm = `${y-1}-07`;
+    endYm   = `${y-1}-12`;
+    dueDate = `${y}-01-25`;
+  } else if(m===3 || m===4){
+    // 4월 신고기간: 1~3월
+    periodLabel = `${y}년 1기 예정 (1~3월)`;
+    startYm = `${y}-01`;
+    endYm   = `${y}-03`;
+    dueDate = `${y}-04-25`;
+  } else if(m===5 || m===6 || m===7){
+    // 7월 신고기간: 4~6월
+    periodLabel = `${y}년 1기 확정 (4~6월)`;
+    startYm = `${y}-04`;
+    endYm   = `${y}-06`;
+    dueDate = `${y}-07-25`;
+  } else if(m===8 || m===9 || m===10){
+    // 10월 신고기간: 7~9월
+    periodLabel = `${y}년 2기 예정 (7~9월)`;
+    startYm = `${y}-07`;
+    endYm   = `${y}-09`;
+    dueDate = `${y}-10-25`;
+  } else {
+    // 11~12월: 다음해 1월 신고 준비 (7~12월)
+    periodLabel = `${y}년 2기 확정 (7~12월)`;
+    startYm = `${y}-07`;
+    endYm   = `${y}-12`;
+    dueDate = `${y+1}-01-25`;
+  }
+
+  // 남은 날짜
+  const dueD = parseDateLocal(dueDate);
+  const todayD = parseDateLocal(ymd());
+  const diffMs = dueD - todayD;
+  const diffDays = Math.ceil(diffMs/(1000*60*60*24));
+
+  return { periodLabel, startYm, endYm, dueDate, diffDays };
+}
+
+// 해당 기간에 orders 중 특정 회사 관련 매출을 집계
+// AMT: orders의 dealer company가 AMT 소속 (dealerId 기준 매핑 or 기본적으로 KY가 대리점에 판매하므로 KY)
+// 실제로는:
+//   AMT 매출 = txLogs에서 AMT_to_BEST, AMT_to_KY 공급 금액
+//   KY  매출 = orders (KY→대리점 발주), txLogs KY_to_BEST
+//   BEST 매출 = txLogs KY_to_BEST, AMT_to_BEST 반대 (BEST는 매입만)
+// VAT 계산: 매출액(VAT포함) → 공급가액 = 매출액/1.1, VAT = 공급가액 * 0.1
+// orders의 price는 VAT포함 단가로 가정
+function calcVatByCompany(startYm, endYm){
+  // 기간 필터 함수
+  const inPeriod = ds => ds >= startYm && ds <= endYm+'-31';
+
+  // KY 매출: orders (KY가 대리점에 판매)
+  const kyOrders = orders.filter(o => inPeriod(ym(o.orderDate)));
+  const kyRevenue = kyOrders.reduce((s,o)=>s+orderAmount(o),0);
+
+  // AMT 매출: txLogs의 AMT_to_KY + AMT_to_BEST
+  const amtTx = txLogs.filter(t =>
+    inPeriod(ym(t.date)) &&
+    (t.type==='AMT_to_KY' || t.type==='AMT_to_BEST' || t.type==='ky_supply_AMT_KY')
+  );
+  const amtRevenue = amtTx.reduce((s,t)=>s+t.amount,0);
+
+  // BEST 매출: BEST가 외부에 판매한 건이 없으므로 txLogs KY_to_BEST + AMT_to_BEST 기준 매입액으로 추정
+  // (BEST는 AMT/KY로부터 물품 매입 후 판매 — 외부 매출 데이터 없으므로 매입액 기준 표시)
+  const bestTx = txLogs.filter(t =>
+    inPeriod(ym(t.date)) &&
+    (t.type==='AMT_to_BEST' || t.type==='KY_to_BEST')
+  );
+  const bestRevenue = bestTx.reduce((s,t)=>s+t.amount,0);
+
+  // VAT = 매출(VAT포함) / 11 (공급가액의 10%)
+  const vatAmt  = r => Math.round(r/11);
+  const supplyAmt = r => Math.round(r*10/11);
+
+  return {
+    AMT: { revenue: amtRevenue, supply: supplyAmt(amtRevenue), vat: vatAmt(amtRevenue) },
+    KY:  { revenue: kyRevenue,  supply: supplyAmt(kyRevenue),  vat: vatAmt(kyRevenue)  },
+    BEST:{ revenue: bestRevenue,supply: supplyAmt(bestRevenue),vat: vatAmt(bestRevenue) },
+  };
+}
+
+function renderVatKpiCards(){
+  const { periodLabel, startYm, endYm, dueDate, diffDays } = getVatPeriodInfo();
+  const vatData = calcVatByCompany(startYm, endYm);
+  const urgentColor = diffDays<=30 ? 'var(--red)' : diffDays<=60 ? 'var(--yellow)' : '#10b981';
+  const urgentBg    = diffDays<=30 ? '#fef2f2' : diffDays<=60 ? '#fffbeb' : '#f0fdf4';
+  const companies   = [
+    {key:'AMT', color:'var(--amt)', bg:'var(--amt-bg)', label:'AMT'},
+    {key:'KY',  color:'var(--ky)',  bg:'var(--ky-bg)',  label:'KY'},
+    {key:'BEST',color:'var(--best)',bg:'var(--best-bg)',label:'BEST'},
+  ];
+
+  return `
+    <div class="kpi" style="--kpi-color:${urgentColor};grid-column:1/-1;background:${urgentBg};border-color:${urgentColor}30">
+      <div class="kpi-label" style="color:${urgentColor}">📋 부가가치세 신고기간</div>
+      <div style="font-size:.85rem;font-weight:800;color:var(--text);margin:4px 0">${periodLabel}</div>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-top:6px">
+        <span style="font-size:.75rem;font-weight:600;color:var(--text2)">📅 신고마감 <b style="color:${urgentColor}">${dueDate}</b></span>
+        <span style="font-size:.75rem;font-weight:600;color:${urgentColor}">⏰ D${diffDays>=0?'-'+diffDays:'+'+Math.abs(diffDays)}</span>
+      </div>
+    </div>
+    ${companies.map(c=>{
+      const d = vatData[c.key];
+      return `<div class="kpi" style="--kpi-color:${c.color};background:${c.bg}">
+        <div class="kpi-label" style="color:${c.color}">🧾 ${c.label} 예상 VAT</div>
+        <div class="kpi-value" style="font-size:1.05rem;color:${c.color}">${fmt(d.vat)}</div>
+        <div class="kpi-sub">공급가액 ${fmt(d.supply)}원 · 매출 ${fmt(d.revenue)}원</div>
+        <div style="font-size:.68rem;color:var(--text3);margin-top:2px">${c.key==='BEST'?'※매입기준 추정':'VAT포함 매출/11'}</div>
+      </div>`;
+    }).join('')}
+  `;
+}
+
+/* ═══════════════════════════════════════════════════════
+   전체 초기화 — OTP 이메일 인증
+═══════════════════════════════════════════════════════ */
+let _otpCode = '';
+let _otpExpiry = 0;
+let _otpSending = false;
+
 function clearAll(){
-  if(!confirm('⚠️ 모든 데이터를 초기화합니다. 계속할까요?')) return;
-  orders=[];invLogs=[];internalTrades=[];resetDealers();
+  // OTP 모달 띄우기
+  showClearOtpModal();
+}
+
+function showClearOtpModal(){
+  const old = document.getElementById('clearOtpModal');
+  if(old) old.remove();
+
+  const modal = document.createElement('div');
+  modal.id = 'clearOtpModal';
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px';
+  modal.innerHTML = `
+    <div style="background:#fff;border-radius:14px;padding:26px;min-width:320px;max-width:400px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.22)">
+      <div style="font-size:1.05rem;font-weight:800;color:#dc2626;margin-bottom:6px">🗑️ 전체 초기화 인증</div>
+      <div style="font-size:.8rem;color:#6b7280;margin-bottom:18px;line-height:1.6">
+        보안을 위해 <b>amedtech@gmail.com</b> 으로<br>
+        OTP 인증코드를 발송합니다.<br>
+        코드 유효시간: <b>5분</b>
+      </div>
+      <div id="otpStep1">
+        <button id="otpSendBtn" onclick="sendClearOtp()"
+          style="width:100%;padding:11px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:.9rem;font-weight:700;cursor:pointer">
+          📧 인증코드 발송
+        </button>
+        <div id="otpSendMsg" style="font-size:.78rem;margin-top:8px;color:#6b7280;text-align:center"></div>
+      </div>
+      <div id="otpStep2" style="display:none;margin-top:14px">
+        <label style="font-size:.8rem;font-weight:700;color:#374151;display:block;margin-bottom:6px">이메일로 받은 6자리 코드 입력</label>
+        <input type="text" id="otpInput" maxlength="6" placeholder="000000"
+          style="width:100%;padding:10px;border:2px solid #2563eb;border-radius:8px;font-size:1.3rem;font-weight:800;text-align:center;letter-spacing:6px;color:#1e3a5f;box-sizing:border-box"
+          oninput="this.value=this.value.replace(/[^0-9]/g,'')">
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button onclick="sendClearOtp()"
+            style="flex:1;padding:9px;border-radius:8px;border:1.5px solid #d1d5db;background:#f8fafc;font-size:.78rem;cursor:pointer;color:#374151;font-weight:600">
+            🔄 재발송
+          </button>
+          <button onclick="verifyClearOtp()"
+            style="flex:2;padding:9px;border-radius:8px;border:none;background:#dc2626;color:#fff;font-size:.85rem;font-weight:700;cursor:pointer">
+            ✓ 확인 후 초기화
+          </button>
+        </div>
+        <div id="otpVerifyMsg" style="font-size:.78rem;margin-top:8px;color:#6b7280;text-align:center"></div>
+      </div>
+      <button onclick="document.getElementById('clearOtpModal').remove()"
+        style="width:100%;margin-top:14px;padding:9px;border-radius:8px;border:1.5px solid #e5e7eb;background:#fff;font-size:.82rem;cursor:pointer;color:#6b7280;font-weight:600">
+        취소
+      </button>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e=>{ if(e.target===modal) modal.remove(); });
+}
+
+async function sendClearOtp(){
+  if(_otpSending) return;
+  _otpSending = true;
+  const btn = document.getElementById('otpSendBtn');
+  const msg = document.getElementById('otpSendMsg');
+  if(btn) btn.disabled = true;
+  if(msg) msg.textContent = '발송 중...';
+
+  // 6자리 OTP 생성
+  _otpCode = String(Math.floor(100000+Math.random()*900000));
+  _otpExpiry = Date.now() + 5*60*1000; // 5분
+
+  try {
+    // EmailJS를 사용하거나 간단하게 Firebase Function 없이 처리
+    // 여기서는 Anthropic API를 통해 Claude가 이메일 발송 불가 → 대안: mailto 링크 or 무료 이메일 API
+    // formspree.io 같은 무료 서비스 또는 EmailJS 사용
+    // EmailJS 공개 API로 발송 (설정 없이 동작하는 mailto fallback 포함)
+    const sent = await _sendOtpEmail(_otpCode);
+    if(sent){
+      if(msg) msg.textContent = '✅ 코드가 발송되었습니다. 이메일을 확인하세요.';
+      if(msg) msg.style.color = '#16a34a';
+      document.getElementById('otpStep2').style.display = 'block';
+      setTimeout(()=>{ const inp=document.getElementById('otpInput'); if(inp) inp.focus(); },100);
+    } else {
+      // mailto fallback
+      _showOtpFallback(_otpCode, msg);
+    }
+  } catch(e) {
+    _showOtpFallback(_otpCode, msg);
+  }
+  _otpSending = false;
+  if(btn) btn.disabled = false;
+}
+
+function _showOtpFallback(code, msgEl){
+  // 자동 발송 실패 시 코드를 화면에 보여주고 mailto 링크 제공
+  // 보안상 실제 운영에서는 서버사이드 발송 필요
+  const step2 = document.getElementById('otpStep2');
+  if(step2) step2.style.display='block';
+  if(msgEl){
+    msgEl.innerHTML = `⚠️ 자동발송 실패. 아래 링크를 클릭하거나<br>코드를 수동으로 확인하세요.<br>
+      <a href="mailto:amedtech@gmail.com?subject=전체초기화+OTP&body=인증코드:+${code}++(유효시간+5분)"
+        target="_blank"
+        style="color:#2563eb;font-weight:700;font-size:.82rem">📧 mailto로 직접 보내기</a><br>
+      <span style="font-size:.85rem;font-weight:800;color:#dc2626;letter-spacing:4px;display:block;margin-top:6px">${code}</span>
+      <span style="font-size:.68rem;color:#9ca3af">(위 코드를 아래에 입력하세요)</span>`;
+    msgEl.style.color='#d97706';
+  }
+}
+
+async function _sendOtpEmail(code){
+  // EmailJS 무료 공개키 방식 시도
+  // 실제 동작을 위해서는 EmailJS 계정 설정 필요
+  // 여기서는 fetch를 통한 간단한 폼 서비스 시도
+  try {
+    // formsubmit.co 무료 서비스 사용 (설정 불필요)
+    const res = await fetch('https://formsubmit.co/ajax/amedtech@gmail.com', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({
+        _subject: '[AMT 관리시스템] 전체초기화 OTP 인증코드',
+        message: `전체 초기화 인증코드: ${code}\n\n유효시간: 5분\n\n이 코드를 요청하지 않았다면 무시하세요.`,
+        _captcha: 'false'
+      })
+    });
+    const data = await res.json();
+    return data.success === 'true' || data.success === true;
+  } catch(e) {
+    return false;
+  }
+}
+
+function verifyClearOtp(){
+  const input = (document.getElementById('otpInput')||{}).value||'';
+  const msg   = document.getElementById('otpVerifyMsg');
+
+  if(!_otpCode){ if(msg){msg.textContent='먼저 코드를 발송해주세요.';msg.style.color='#dc2626';} return; }
+  if(Date.now() > _otpExpiry){ if(msg){msg.textContent='⏰ 코드가 만료되었습니다. 재발송해주세요.';msg.style.color='#dc2626';} return; }
+  if(input.trim() !== _otpCode){ if(msg){msg.textContent='❌ 코드가 올바르지 않습니다.';msg.style.color='#dc2626';} return; }
+
+  // 인증 성공
+  _otpCode = '';
+  _otpExpiry = 0;
+  document.getElementById('clearOtpModal').remove();
+
+  orders=[];invLogs=[];internalTrades=[];txLogs=[];bestReturns=[];kyReturns=[];auditLogs=[];resetDealers();
   saveLS();
-  toast('초기화 완료','info');
+  toast('✅ 인증 완료 — 전체 초기화 완료','info');
   refreshAll();
 }
 
