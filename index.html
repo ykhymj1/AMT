@@ -2612,8 +2612,9 @@ async function saveKySupply(){
   invLogs.push({id:'inv_'+(Date.now()+1)+'_k', date, product:prod, qty:qty, type:'in',
     company:'KY', memo:'내부공급←AMT'+(memo?' ('+memo+')':''), relInternal:id, createdAt:new Date().toISOString()});
 
-  // txLogs에도 추가 → 거래목록에서 조회 가능
-  txLogs.push({id:'tx_'+Date.now(), date, type:'AMT_to_KY', amount:total, memo:(prod+' '+fmt(qty)+'개'+(memo?' ('+memo+')':'')), createdAt:new Date().toISOString()});
+  // txLogs에도 추가 → 거래목록에서 조회 가능 (relInternal로 invLogs 연결)
+  const txId='tx_'+(Date.now()+2);
+  txLogs.push({id:txId, date, type:'AMT_to_KY', amount:total, memo:(prod+' '+fmt(qty)+'개'+(memo?' ('+memo+')':'')), relInternal:id, createdAt:new Date().toISOString()});
   addAuditLog('create','내부거래','AMT→KY '+prod+' '+fmt(qty)+'개 '+fmt(total)+'원 ('+date+')');
   saveLS(); await fbSaveAll();
   toast('AMT→KY 물품공급 저장! '+prod+' '+fmt(qty)+'개','success');
@@ -2700,18 +2701,21 @@ function calcBalance(compA, compB){
   //   KY_to_BEST : KY가 BEST에 물건 반납 → BEST가 KY에 돈 줘야함 → KY↔BEST: KY 채권 증가 → balance+=
   // (하위 호환: 구 데이터 r.from='AMT'/'KY' 형식도 처리)
   bestReturns.forEach(r=>{
-    const ft = r.fromType || (r.from==='AMT' ? 'AMT_to_BEST' : r.from==='KY' ? 'KY_to_BEST' : '');
-    if(!ft) return;
-    if(ft==='KY_to_AMT'){
-      // KY가 AMT에 물건 반납 → AMT 채권 감소
-      if(compA==='AMT'&&compB==='KY') balance-=r.total;
-      if(compA==='KY'&&compB==='AMT') balance+=r.total;
-    } else if(ft==='AMT_to_BEST'){
-      // AMT가 BEST에 물건 반납 → AMT의 BEST에 대한 채권 감소
-      if(compA==='AMT'&&compB==='BEST') balance-=r.total;
-      if(compA==='BEST'&&compB==='AMT') balance+=r.total;
-    } else if(ft==='KY_to_BEST'){
-      // KY가 BEST에 물건 반납 → BEST가 KY에 돈 줘야함 → KY 채권 증가
+    // fromType: 반품 출처 (from=AMT or KY)
+    // AMT→BEST 반품: BEST가 AMT로부터 물건 받음 → BEST가 AMT에 돈 줘야함
+    //   → AMT 채권 증가(balance+=), BEST 채무 증가
+    // KY→BEST 반품: BEST가 KY로부터 물건 받음 → BEST가 KY에 돈 줘야함
+    //   → KY 채권 증가(balance+=), BEST 채무 증가
+    const fromCo = r.fromType==='AMT_to_BEST'||r.from==='AMT' ? 'AMT'
+                 : r.fromType==='KY_to_BEST'||r.from==='KY'   ? 'KY'
+                 : null;
+    if(!fromCo) return;
+    if(fromCo==='AMT'){
+      // AMT↔BEST: AMT 채권 증가
+      if(compA==='AMT'&&compB==='BEST') balance+=r.total;
+      if(compA==='BEST'&&compB==='AMT') balance-=r.total;
+    } else if(fromCo==='KY'){
+      // KY↔BEST: KY 채권 증가
       if(compA==='KY'&&compB==='BEST') balance+=r.total;
       if(compA==='BEST'&&compB==='KY') balance-=r.total;
     }
@@ -2828,11 +2832,19 @@ function renderTxList(){
 async function deleteTx(id){
   if(!confirm('이 거래를 삭제할까요?')) return;
   const t=txLogs.find(x=>x.id===id);
-  if(t) addAuditLog('delete','채권채무',`삭제: ${txTypeLabel(t.type)} ${fmt(t.amount)}원 (${t.date})`,t);
+  if(!t) return;
+  addAuditLog('delete','채권채무',`삭제: ${txTypeLabel(t.type)} ${fmt(t.amount)}원 (${t.date})`,t);
   txLogs=txLogs.filter(x=>x.id!==id);
+  // AMT_to_KY 거래는 relInternal로 연결된 재고이력/내부거래도 함께 삭제
+  if(t.type==='AMT_to_KY' && t.relInternal){
+    const itId=t.relInternal;
+    invLogs=invLogs.filter(i=>i.relInternal!==itId);
+    internalTrades=internalTrades.filter(x=>x.id!==itId);
+    await fbDelDoc('internal', itId);
+  }
   saveLS(); await fbSaveAll();
   toast('삭제 완료','info');
-  renderDebtSummary(); renderTxList();
+  renderDebtSummary(); renderTxList(); renderInvCards(); renderInvHistory();
 }
 
 // 채무 조정 저장
