@@ -810,57 +810,10 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
   <!-- 반품 탭 -->
   <div class="tab-pane" id="tx-tab-best">
 
-    <!-- KY → AMT 반품 -->
-    <div class="card" style="margin-top:12px">
-      <div class="card-header">
-        <div class="card-title"><div class="card-title-dot" style="background:var(--ky)"></div>KY → AMT 반품</div>
-      </div>
-      <div class="form-grid">
-        <div class="form-group">
-          <label>날짜 <span class="req">*</span></label>
-          <input type="date" id="kyRetDate">
-        </div>
-        <div class="form-group">
-          <label>제품 <span class="req">*</span></label>
-          <select id="kyRetProduct">
-            <option value="">-- 선택 --</option>
-            <option value="JUC">JUC</option>
-            <option value="MEDIAS">MEDIAS</option>
-            <option value="DELL">DELL</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>수량 <span class="req">*</span></label>
-          <input type="text" inputmode="numeric" id="kyRetQty" placeholder="0" oninput="fmtInput(this);kyRetCalc()">
-        </div>
-      </div>
-      <div class="form-grid">
-        <div class="form-group">
-          <label>단가 <span class="req">*</span></label>
-          <input type="text" inputmode="numeric" id="kyRetPrice" placeholder="0" oninput="fmtInput(this);kyRetCalc()">
-        </div>
-        <div class="form-group">
-          <label>총금액 (자동계산)</label>
-          <input type="text" id="kyRetTotal" readonly style="font-weight:700;color:var(--ky)">
-        </div>
-        <div class="form-group">
-          <label>메모</label>
-          <input type="text" id="kyRetMemo" placeholder="선택사항">
-        </div>
-      </div>
-      <button class="btn btn-primary" style="background:var(--ky);border-color:var(--ky);margin-top:4px" onclick="saveKyReturn()">💾 KY반품 저장</button>
-    </div>
-    <div class="card" style="margin-top:14px">
-      <div class="card-header">
-        <div class="card-title"><div class="card-title-dot" style="background:var(--ky)"></div>KY → AMT 반품 이력</div>
-      </div>
-      <div id="kyReturnList"></div>
-    </div>
-
     <!-- BEST 반품 -->
     <div class="card" style="margin-top:20px">
       <div class="card-header">
-        <div class="card-title"><div class="card-title-dot" style="background:var(--best)"></div>BEST 반품 입력</div>
+        <div class="card-title"><div class="card-title-dot" style="background:var(--best)"></div>반품 입력 (KY↔AMT / AMT↔BEST / KY↔BEST)</div>
       </div>
       <div class="form-grid">
         <div class="form-group">
@@ -868,10 +821,11 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
           <input type="date" id="bestDate">
         </div>
         <div class="form-group">
-          <label>반품 출처</label>
+          <label>반품 출처 <span class="req">*</span></label>
           <select id="bestFrom">
-            <option value="AMT">AMT 반품</option>
-            <option value="KY">KY 반품</option>
+            <option value="KY_to_AMT">KY → AMT 반품</option>
+            <option value="AMT_to_BEST">AMT → BEST 반품</option>
+            <option value="KY_to_BEST">KY → BEST 반품</option>
           </select>
         </div>
         <div class="form-group">
@@ -903,7 +857,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
     </div>
     <div class="card" style="margin-top:14px">
       <div class="card-header">
-        <div class="card-title"><div class="card-title-dot" style="background:var(--best)"></div>BEST 반품 이력</div>
+        <div class="card-title"><div class="card-title-dot" style="background:var(--best)"></div>반품 이력</div>
       </div>
       <div id="bestReturnList"></div>
     </div>
@@ -1655,7 +1609,6 @@ function refreshAll(){
   renderDealerCards();
   renderReport();
   renderDebtSummary();
-  renderKyReturnList();
   renderBestReturnList();
   renderTxList();
 }
@@ -2597,7 +2550,7 @@ function txTab(name, btn){
   btn.classList.add('active');
   document.getElementById('tx-tab-'+name).classList.add('active');
   if(name==='tx') renderTxList();
-  if(name==='best'){ renderBestReturnList(); renderKyReturnList(); }
+  if(name==='best'){ renderBestReturnList(); }
   if(name==='history') renderInternalList();
 }
 
@@ -2659,11 +2612,8 @@ async function saveKySupply(){
   invLogs.push({id:'inv_'+(Date.now()+1)+'_k', date, product:prod, qty:qty, type:'in',
     company:'KY', memo:'내부공급←AMT'+(memo?' ('+memo+')':''), relInternal:id, createdAt:new Date().toISOString()});
 
-  // txLogs에 추가 → 거래목록 표시 + 삭제 연동을 위해 relInternal로 연결
-  const txId = 'tx_'+Date.now();
-  txLogs.push({id:txId, date, type:'AMT_to_KY', amount:total,
-    memo:prod+' '+fmt(qty)+'개'+(memo?' ('+memo+')':''),
-    relInternal:id, createdAt:new Date().toISOString()});
+  // txLogs에도 추가 → 거래목록에서 조회 가능
+  txLogs.push({id:'tx_'+Date.now(), date, type:'AMT_to_KY', amount:total, memo:(prod+' '+fmt(qty)+'개'+(memo?' ('+memo+')':'')), createdAt:new Date().toISOString()});
   addAuditLog('create','내부거래','AMT→KY '+prod+' '+fmt(qty)+'개 '+fmt(total)+'원 ('+date+')');
   saveLS(); await fbSaveAll();
   toast('AMT→KY 물품공급 저장! '+prod+' '+fmt(qty)+'개','success');
@@ -2676,80 +2626,9 @@ async function saveKySupply(){
   renderDebtSummary(); renderInternalList(); renderInvCards(); renderInvHistory();
 }
 
-// KY→AMT 반품 함수
-function kyRetCalc(){
-  const p = parseInput(document.getElementById('kyRetPrice'));
-  const q = parseInput(document.getElementById('kyRetQty'));
-  setInputFmt(document.getElementById('kyRetTotal'), p*q);
-}
 
-async function saveKyReturn(){
-  const date = (document.getElementById('kyRetDate')||{}).value;
-  const product = (document.getElementById('kyRetProduct')||{}).value;
-  const price = parseInput(document.getElementById('kyRetPrice'));
-  const qty = parseInput(document.getElementById('kyRetQty'));
-  const memo = (document.getElementById('kyRetMemo')||{}).value||'';
-  const total = price * qty;
-  if(!date||!product||qty<=0||price<=0){ toast('날짜·제품·단가·수량을 입력하세요','error'); return; }
 
-  const id = 'kyr_'+Date.now();
-  kyReturns.push({id,date,product,price,qty,total,memo,createdAt:new Date().toISOString()});
 
-  // KY 재고 출고
-  invLogs.push({id:'inv_'+Date.now()+'_kr', date, product, qty:-qty, type:'out',
-    company:'KY', memo:'KY반품→AMT'+(memo?' ('+memo+')':''), createdAt:new Date().toISOString()});
-  // AMT 재고 입고
-  invLogs.push({id:'inv_'+(Date.now()+1)+'_ar', date, product, qty:qty, type:'in',
-    company:'AMT', memo:'KY반품←KY'+(memo?' ('+memo+')':''), createdAt:new Date().toISOString()});
-
-  addAuditLog('create','내부거래','KY→AMT 반품 '+product+' '+fmt(qty)+'개 '+fmt(total)+'원 ('+date+')');
-  saveLS(); await fbSaveAll();
-  toast('KY→AMT 반품 저장 완료!','success');
-
-  document.getElementById('kyRetProduct').value='';
-  document.getElementById('kyRetQty').value='';
-  document.getElementById('kyRetPrice').value='';
-  document.getElementById('kyRetTotal').value='';
-  document.getElementById('kyRetMemo').value='';
-  renderDebtSummary(); renderKyReturnList(); renderInvCards(); renderInvHistory();
-}
-
-function renderKyReturnList(){
-  const list=[...kyReturns].sort((a,b)=>b.date.localeCompare(a.date));
-  const el=document.getElementById('kyReturnList');
-  if(!el) return;
-  if(!list.length){ el.innerHTML=emptyHtml('반품 이력이 없습니다'); return; }
-  const total=list.reduce((s,r)=>s+r.total,0);
-  el.innerHTML=`<div style="padding:8px 12px;background:var(--surface2);border-radius:6px;margin-bottom:10px;font-size:.82rem;display:flex;gap:16px;flex-wrap:wrap">
-    <span>총 <b>${list.length}건</b></span><span>합계 <b>${fmt(total)}원</b></span>
-  </div>
-  <div class="table-wrap"><table>
-    <thead><tr><th>날짜</th><th>제품</th><th class="td-r">단가</th><th class="td-r">수량</th><th class="td-r">총금액</th><th>메모</th><th class="td-c">삭제</th></tr></thead>
-    <tbody>
-    ${list.map(r=>`<tr>
-      <td class="td-mono">${r.date}</td>
-      <td><span style="background:var(--ky-bg);color:var(--ky);padding:1px 6px;border-radius:10px;font-size:.68rem;font-weight:700">KY→AMT</span> ${r.product}</td>
-      <td class="td-mono td-r">${fmt(r.price)}</td>
-      <td class="td-mono td-r">${fmt(r.qty)}</td>
-      <td class="td-mono td-r" style="color:var(--ky);font-weight:700">${fmt(r.total)}원</td>
-      <td style="font-size:.75rem;color:var(--text2)">${r.memo||''}</td>
-      <td class="td-c"><button class="btn btn-danger btn-xs" onclick="deleteKyReturn('${r.id}')">✕</button></td>
-    </tr>`).join('')}
-    </tbody>
-  </table></div>`;
-}
-
-async function deleteKyReturn(id){
-  if(!confirm('이 반품 이력을 삭제할까요?')) return;
-  const r=kyReturns.find(x=>x.id===id);
-  if(r) addAuditLog('delete','내부거래','KY반품삭제: '+r.product+' '+fmt(r.qty)+'개 '+fmt(r.total)+'원',r);
-  kyReturns=kyReturns.filter(x=>x.id!==id);
-  // 관련 재고 로그도 삭제
-  invLogs=invLogs.filter(i=>i.memo!=='KY반품→AMT'&&i.memo!=='KY반품←KY');
-  saveLS(); await fbSaveAll();
-  toast('삭제 완료','info');
-  renderDebtSummary(); renderKyReturnList(); renderInvCards(); renderInvHistory();
-}
 
 // 거래 유형에 따른 방향 배지 HTML
 function txDirectionBadge(type){
@@ -2797,7 +2676,6 @@ function calcBalance(compA, compB){
   let balance=0;
   // 조정값
   txLogs.filter(t=>t.type===`adj_${compA}_${compB}`||t.type===`adj_${compB}_${compA}`).forEach(t=>{
-    // adj는 compA 기준으로 저장
     if(t.type===`adj_${compA}_${compB}`) balance+=t.adjAmt;
     else balance-=t.adjAmt;
   });
@@ -2805,50 +2683,39 @@ function calcBalance(compA, compB){
   txLogs.filter(t=>!t.type.startsWith('adj_')).forEach(t=>{
     const {from,to}=parseTxFromTo(t.type);
     if(!from||!to) return;
-    // 관련 없는 거래 무시
     const involves=(from===compA&&to===compB)||(from===compB&&to===compA);
     if(!involves) return;
-
     if(t.type.includes('_to_')){
-      // 물품공급/송금: 준 쪽 채권+, 받은 쪽 채무+
-      if(from===compA && to===compB) balance+=t.amount;  // compA→compB: compA채권+
-      if(from===compB && to===compA) balance-=t.amount;  // compB→compA: compA채권-
+      if(from===compA && to===compB) balance+=t.amount;
+      if(from===compB && to===compA) balance-=t.amount;
     } else if(t.type.includes('_loan_')){
-      // 무이자대출/선수금반환: 실질적 현금 지급이지만 채무 상계 의미
-      // AMT_loan_KY: AMT가 KY에 돈 지급 → KY의 AMT에 대한 선수금(채권) 감소 → AMT 채무 감소 → balance+= (AMT관점 개선)
-      // KY_loan_AMT: KY가 AMT에 돈 지급 → KY의 AMT에 대한 채권 증가 → AMT 채무 증가 → balance-= (AMT관점 악화)
-      if(from===compA && to===compB) balance+=t.amount;  // compA가 대출/반환 → compA 채무 감소 → balance+
-      if(from===compB && to===compA) balance-=t.amount;  // compB가 대출 → compA 채무 증가 → balance-
+      if(from===compA && to===compB) balance+=t.amount;
+      if(from===compB && to===compA) balance-=t.amount;
     }
   });
   // ── 반품 반영 ──
-  // fromType 기준:
-  //   KY_to_AMT  : KY가 AMT에 물건 반납 → AMT는 KY에 값 줘야함 → AMT채권 감소(-)
-  //   AMT_to_BEST: AMT가 BEST에 물건 반납 → BEST는 AMT에 값 줘야함 → AMT채권 증가(+)
-  //   KY_to_BEST : KY가 BEST에 물건 반납 → BEST는 KY에 값 줘야함 → KY채권 증가(+)
-  // (하위 호환: 구 r.from 형식 → AMT_to_BEST / KY_to_BEST로 변환)
+  // bestReturns.fromType 기준:
+  //   KY_to_AMT  : KY가 AMT에 물건 반납 → AMT↔KY 잔액: AMT 채권 감소 → AMT↔KY balance-=
+  //   AMT_to_BEST: AMT가 BEST에 물건 반납 → AMT↔BEST 잔액: AMT 채권 감소 → AMT↔BEST balance-=
+  //   KY_to_BEST : KY가 BEST에 물건 반납 → BEST가 KY에 돈 줘야함 → KY↔BEST: KY 채권 증가 → balance+=
+  // (하위 호환: 구 데이터 r.from='AMT'/'KY' 형식도 처리)
   bestReturns.forEach(r=>{
-    const ft=r.fromType||(r.from==='AMT'?'AMT_to_BEST':r.from==='KY'?'KY_to_BEST':'');
+    const ft = r.fromType || (r.from==='AMT' ? 'AMT_to_BEST' : r.from==='KY' ? 'KY_to_BEST' : '');
     if(!ft) return;
     if(ft==='KY_to_AMT'){
-      // KY→AMT 반품: AMT가 KY에 값 줘야함 → AMT 채권 감소
+      // KY가 AMT에 물건 반납 → AMT 채권 감소
       if(compA==='AMT'&&compB==='KY') balance-=r.total;
       if(compA==='KY'&&compB==='AMT') balance+=r.total;
     } else if(ft==='AMT_to_BEST'){
-      // AMT→BEST 반품: BEST가 AMT에 값 줘야함 → AMT 채권 증가
-      if(compA==='AMT'&&compB==='BEST') balance+=r.total;
-      if(compA==='BEST'&&compB==='AMT') balance-=r.total;
+      // AMT가 BEST에 물건 반납 → AMT의 BEST에 대한 채권 감소
+      if(compA==='AMT'&&compB==='BEST') balance-=r.total;
+      if(compA==='BEST'&&compB==='AMT') balance+=r.total;
     } else if(ft==='KY_to_BEST'){
-      // KY→BEST 반품: BEST가 KY에 값 줘야함 → KY 채권 증가
+      // KY가 BEST에 물건 반납 → BEST가 KY에 돈 줘야함 → KY 채권 증가
       if(compA==='KY'&&compB==='BEST') balance+=r.total;
       if(compA==='BEST'&&compB==='KY') balance-=r.total;
     }
   });
-  // (구버전 kyReturns 하위호환 - KY→AMT 반품으로 처리)
-  if((compA==='AMT'&&compB==='KY')||(compA==='KY'&&compB==='AMT')){
-    const sign=(compA==='AMT')?-1:1;
-    kyReturns.forEach(r=>{ balance+=sign*r.total; });
-  }
   // internalTrades 반영 (AMT→KY 물품공급은 AMT 채권+)
   if((compA==='AMT'&&compB==='KY')||(compA==='KY'&&compB==='AMT')){
     const sign=(compA==='AMT')?1:-1;
@@ -2961,20 +2828,11 @@ function renderTxList(){
 async function deleteTx(id){
   if(!confirm('이 거래를 삭제할까요?')) return;
   const t=txLogs.find(x=>x.id===id);
-  if(!t) return;
-  addAuditLog('delete','채권채무',`삭제: ${txTypeLabel(t.type)} ${fmt(t.amount)}원 (${t.date})`,t);
-
-  // AMT_to_KY 타입이면 연결된 internalTrades + invLogs도 함께 삭제
-  if(t.type==='AMT_to_KY' && t.relInternal){
-    const rid=t.relInternal;
-    internalTrades=internalTrades.filter(x=>x.id!==rid);
-    invLogs=invLogs.filter(x=>x.relInternal!==rid);
-  }
-
+  if(t) addAuditLog('delete','채권채무',`삭제: ${txTypeLabel(t.type)} ${fmt(t.amount)}원 (${t.date})`,t);
   txLogs=txLogs.filter(x=>x.id!==id);
   saveLS(); await fbSaveAll();
   toast('삭제 완료','info');
-  renderDebtSummary(); renderTxList(); renderInvCards(); renderInvHistory(); renderInternalList();
+  renderDebtSummary(); renderTxList();
 }
 
 // 채무 조정 저장
@@ -3007,7 +2865,7 @@ function bestCalcTotal(){
 
 async function saveBestReturn(){
   const date=document.getElementById('bestDate').value;
-  const from=document.getElementById('bestFrom').value;
+  const fromType=document.getElementById('bestFrom').value; // KY_to_AMT | AMT_to_BEST | KY_to_BEST
   const product=document.getElementById('bestProduct').value.trim();
   const price=parseInput(document.getElementById('bestPrice'));
   const qty=parseInput(document.getElementById('bestQty'));
@@ -3015,11 +2873,13 @@ async function saveBestReturn(){
   const total=price*qty;
   if(!date||!product||qty<=0||price<=0){ toast('날짜·제품명·단가·수량을 입력하세요','error'); return; }
   const id='best_'+Date.now();
-  const entry={id,date,from,product,price,qty,total,memo,createdAt:new Date().toISOString()};
+  // from: 출처 회사 약칭 (KY_to_AMT→from=KY, AMT_to_BEST→from=AMT, KY_to_BEST→from=KY)
+  const fromLabel={'KY_to_AMT':'KY→AMT','AMT_to_BEST':'AMT→BEST','KY_to_BEST':'KY→BEST'};
+  const entry={id,date,fromType,product,price,qty,total,memo,createdAt:new Date().toISOString()};
   bestReturns.push(entry);
-  addAuditLog('create','채권채무',`BEST←${from} 반품 ${product} ${fmt(qty)}개 ${fmt(total)}원 (${date})`);
+  addAuditLog('create','채권채무',`${fromLabel[fromType]||fromType} 반품 ${product} ${fmt(qty)}개 ${fmt(total)}원 (${date})`);
   saveLS(); await fbSaveAll();
-  toast('BEST 반품 저장 완료!','success');
+  toast('반품 저장 완료!','success');
   document.getElementById('bestProduct').value='';
   document.getElementById('bestPrice').value='';
   document.getElementById('bestQty').value='';
@@ -3031,26 +2891,34 @@ async function saveBestReturn(){
 function renderBestReturnList(){
   const list=[...bestReturns].sort((a,b)=>b.date.localeCompare(a.date));
   const el=document.getElementById('bestReturnList');
+  if(!el) return;
   if(!list.length){ el.innerHTML=emptyHtml('반품 이력이 없습니다'); return; }
   const total=list.reduce((s,r)=>s+r.total,0);
+  const ftLabel={'KY_to_AMT':'KY→AMT','AMT_to_BEST':'AMT→BEST','KY_to_BEST':'KY→BEST'};
+  const ftColor={'KY_to_AMT':'var(--ky)','AMT_to_BEST':'var(--amt)','KY_to_BEST':'var(--ky)'};
   el.innerHTML=`
     <div style="padding:8px 12px;background:var(--surface2);border-radius:6px;margin-bottom:10px;font-size:.82rem;display:flex;gap:16px;flex-wrap:wrap">
       <span>총 <b>${list.length}건</b></span>
       <span>합계 <b>${fmt(total)}원</b></span>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>날짜</th><th>출처</th><th>제품명</th><th class="td-r">단가</th><th class="td-r">수량</th><th class="td-r">총금액</th><th>메모</th><th class="td-c">삭제</th></tr></thead>
+      <thead><tr><th>날짜</th><th>반품방향</th><th>제품명</th><th class="td-r">단가</th><th class="td-r">수량</th><th class="td-r">총금액</th><th>메모</th><th class="td-c">삭제</th></tr></thead>
       <tbody>
-      ${list.map(r=>`<tr>
-        <td class="td-mono">${r.date}</td>
-        <td><span style="background:var(--best-bg);color:var(--best);padding:1px 6px;border-radius:10px;font-size:.68rem;font-weight:700">${r.from}</span>→<span style="background:var(--best-bg);color:var(--best);padding:1px 6px;border-radius:10px;font-size:.68rem;font-weight:700">BEST</span></td>
-        <td style="font-size:.8rem">${r.product}</td>
-        <td class="td-mono td-r">${fmt(r.price)}</td>
-        <td class="td-mono td-r">${fmt(r.qty)}</td>
-        <td class="td-mono td-r tx-in">${fmt(r.total)}원</td>
-        <td style="font-size:.75rem;color:var(--text2)">${r.memo||''}</td>
-        <td class="td-c"><button class="btn btn-danger btn-xs" onclick="deleteBestReturn('${r.id}')">✕</button></td>
-      </tr>`).join('')}
+      ${list.map(r=>{
+        const ft=r.fromType||(r.from==='AMT'?'AMT_to_BEST':r.from==='KY'?'KY_to_BEST':'');
+        const lbl=ftLabel[ft]||ft||'-';
+        const col=ftColor[ft]||'var(--best)';
+        return `<tr>
+          <td class="td-mono">${r.date}</td>
+          <td><span style="background:${col}20;color:${col};padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700">${lbl}</span></td>
+          <td style="font-size:.8rem">${r.product}</td>
+          <td class="td-mono td-r">${fmt(r.price)}</td>
+          <td class="td-mono td-r">${fmt(r.qty)}</td>
+          <td class="td-mono td-r tx-in">${fmt(r.total)}원</td>
+          <td style="font-size:.75rem;color:var(--text2)">${r.memo||''}</td>
+          <td class="td-c"><button class="btn btn-danger btn-xs" onclick="deleteBestReturn('${r.id}')">✕</button></td>
+        </tr>`;
+      }).join('')}
       </tbody>
     </table></div>`;
 }
@@ -3058,7 +2926,11 @@ function renderBestReturnList(){
 async function deleteBestReturn(id){
   if(!confirm('이 반품 이력을 삭제할까요?')) return;
   const r=bestReturns.find(x=>x.id===id);
-  if(r) addAuditLog('delete','채권채무',`반품삭제: ${r.from}→BEST ${r.product} ${fmt(r.qty)}개 ${fmt(r.total)}원`,r);
+  if(r){
+    const ft=r.fromType||(r.from==='AMT'?'AMT_to_BEST':r.from==='KY'?'KY_to_BEST':'');
+    const ftLabel={'KY_to_AMT':'KY→AMT','AMT_to_BEST':'AMT→BEST','KY_to_BEST':'KY→BEST'};
+    addAuditLog('delete','채권채무',`반품삭제: ${ftLabel[ft]||ft} ${r.product} ${fmt(r.qty)}개 ${fmt(r.total)}원`,r);
+  }
   bestReturns=bestReturns.filter(x=>x.id!==id);
   saveLS(); await fbSaveAll();
   toast('삭제 완료','info');
