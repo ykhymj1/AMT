@@ -768,6 +768,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
           <select id="txType" onchange="txTypeChange()">
             <option value="">-- 선택 --</option>
             <option value="KY_to_AMT">KY → AMT (대금지급/선수금)</option>
+            <option value="AMT_pay_KY">AMT → KY (대금지급/선수금)</option>
             <option value="AMT_loan_KY">AMT → KY (무이자대출/선수금반환)</option>
             <option value="BEST_to_AMT">BEST → AMT (대금지급/선수금)</option>
             <option value="AMT_loan_BEST">AMT → BEST (무이자대출/선수금반환)</option>
@@ -2539,6 +2540,7 @@ function renderInternalList(){
    txType 값 의미:
    AMT_to_KY    : AMT가 KY에 물품공급 → AMT채권+, KY채무+
    KY_to_AMT    : KY→AMT 대금지급/선수금 → AMT채권-, KY채무-
+   AMT_pay_KY   : AMT→KY 대금지급/선수금 → AMT채권+감소(채무증가), KY채무감소 → balance-=
    AMT_loan_KY  : AMT→KY 무이자대출/선수금반환 → AMT채무감소 → balance+=
    BEST_to_AMT  : BEST→AMT 대금지급/선수금 → AMT↔BEST 채권-
    AMT_loan_BEST: AMT→BEST 무이자대출/선수금반환 → AMT↔BEST 채무감소 → balance+=
@@ -2569,7 +2571,7 @@ function txTab(name, btn){
 // 거래 유형 레이블
 function txTypeLabel(type){
   const map={
-    'AMT_to_KY':'AMT→KY 물품공급','KY_to_AMT':'KY→AMT (대금지급/선수금)',
+    'AMT_to_KY':'AMT→KY 물품공급','KY_to_AMT':'KY→AMT (대금지급/선수금)','AMT_pay_KY':'AMT→KY (대금지급/선수금)',
     'AMT_to_BEST':'AMT→BEST 물품공급','BEST_to_AMT':'BEST→AMT (대금지급/선수금)',
     'KY_to_BEST':'KY→BEST (대금지급/선수금)','BEST_to_KY':'BEST→KY (대금지급/선수금)',
     'AMT_loan_KY':'AMT→KY (무이자대출/선수금반환)','KY_loan_AMT':'KY→AMT (무이자대출/선수금반환)',
@@ -2683,6 +2685,7 @@ function txDirectionBadge(type){
 function parseTxFromTo(type){
   if(type.includes('_to_')){ const p=type.split('_to_'); return {from:p[0],to:p[1]}; }
   if(type.includes('_loan_')){ const p=type.split('_loan_'); return {from:p[0],to:p[1]}; }
+  if(type.includes('_pay_')){ const p=type.split('_pay_'); return {from:p[0],to:p[1]}; }
   return {from:'',to:''};
 }
 
@@ -2705,6 +2708,10 @@ function calcBalance(compA, compB){
     } else if(t.type.includes('_loan_')){
       if(from===compA && to===compB) balance+=t.amount;
       if(from===compB && to===compA) balance-=t.amount;
+    } else if(t.type.includes('_pay_')){
+      // _pay_: 대금지급/선수금. from이 to에게 현금 지급 → from의 채무 증가(또는 to의 채권 증가) → compA 관점 balance-=
+      if(from===compA && to===compB) balance-=t.amount;
+      if(from===compB && to===compA) balance+=t.amount;
     }
   });
   // ── 반품 반영 ──
