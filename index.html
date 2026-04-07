@@ -2540,7 +2540,7 @@ function renderInternalList(){
    txType 값 의미:
    AMT_to_KY    : AMT가 KY에 물품공급 → AMT채권+, KY채무+
    KY_to_AMT    : KY→AMT 대금지급/선수금 → AMT채권-, KY채무-
-   AMT_pay_KY   : AMT→KY 대금지급/선수금 → AMT채권+감소(채무증가), KY채무감소 → balance-=
+   AMT_pay_KY   : AMT→KY 대금지급/선수금 → AMT 채권+ (KY에게 줬으니 AMT채권 증가) → balance+=
    AMT_loan_KY  : AMT→KY 무이자대출/선수금반환 → AMT채무감소 → balance+=
    BEST_to_AMT  : BEST→AMT 대금지급/선수금 → AMT↔BEST 채권-
    AMT_loan_BEST: AMT→BEST 무이자대출/선수금반환 → AMT↔BEST 채무감소 → balance+=
@@ -2709,9 +2709,9 @@ function calcBalance(compA, compB){
       if(from===compA && to===compB) balance+=t.amount;
       if(from===compB && to===compA) balance-=t.amount;
     } else if(t.type.includes('_pay_')){
-      // _pay_: 대금지급/선수금. from이 to에게 현금 지급 → from의 채무 증가(또는 to의 채권 증가) → compA 관점 balance-=
-      if(from===compA && to===compB) balance-=t.amount;
-      if(from===compB && to===compA) balance+=t.amount;
+      // _pay_: 대금지급/선수금. AMT→KY 현금지급 → AMT 채권 증가 → balance+=
+      if(from===compA && to===compB) balance+=t.amount;
+      if(from===compB && to===compA) balance-=t.amount;
     }
   });
   // ── 반품 반영 ──
