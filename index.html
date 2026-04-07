@@ -4014,12 +4014,21 @@ function closeRecModal(){ document.getElementById('recModal').classList.remove('
    COMMA INPUT UTILS
 ═══════════════════════════════════════════════════════ */
 function fmtInput(el){
-  const raw=el.value.replace(/[^0-9]/g,'');
-  if(raw==='') { el.value=''; return; }
-  el.value=Number(raw).toLocaleString('ko-KR');
+  const allowMinus = el.id && el.id.startsWith('adjAmt_');
+  if(allowMinus){
+    const isNeg = el.value.trimStart().startsWith('-');
+    const raw = el.value.replace(/[^0-9]/g,'');
+    if(raw==='') { el.value = isNeg ? '-' : ''; return; }
+    el.value = (isNeg ? '-' : '') + Number(raw).toLocaleString('ko-KR');
+  } else {
+    const raw=el.value.replace(/[^0-9]/g,'');
+    if(raw==='') { el.value=''; return; }
+    el.value=Number(raw).toLocaleString('ko-KR');
+  }
 }
 function parseInput(el){
-  return parseInt((el.value||'').replace(/,/g,''))||0;
+  const raw=(el.value||'').replace(/,/g,'');
+  return parseInt(raw)||0;
 }
 function setInputFmt(el, num){
   el.value = num ? Number(num).toLocaleString('ko-KR') : '';
