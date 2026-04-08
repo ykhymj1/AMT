@@ -1361,6 +1361,47 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
 <!-- TOAST -->
 <div class="toast-wrap" id="toastWrap"></div>
 
+<!-- 채권채무 내역 모달 -->
+<div id="debtDetailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow-y:auto;padding:16px;box-sizing:border-box">
+  <div style="background:#fff;border-radius:14px;max-width:700px;margin:0 auto;box-shadow:0 8px 40px rgba(0,0,0,.2)">
+    <div style="padding:20px 20px 0">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">
+        <div id="debtDetailTitle" style="font-size:1rem;font-weight:800"></div>
+        <button onclick="closeDebtDetail()" style="border:none;background:#f1f5f9;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:.85rem">X 닫기</button>
+      </div>
+      <div id="debtDetailBalance" style="margin-bottom:14px"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;padding:12px;background:#f8fafc;border-radius:10px">
+        <div>
+          <div style="font-size:.72rem;font-weight:600;color:#888;margin-bottom:4px">조회 방식</div>
+          <select id="debtFilterMode" onchange="switchDebtFilterMode()" style="padding:6px 10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.82rem">
+            <option value="month">월별</option>
+            <option value="range">기간</option>
+          </select>
+        </div>
+        <div id="debtFilterMonthWrap">
+          <div style="font-size:.72rem;font-weight:600;color:#888;margin-bottom:4px">월 선택</div>
+          <input type="month" id="debtFilterMonth" style="padding:6px 10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.82rem" onchange="renderDebtDetail()">
+        </div>
+        <div id="debtFilterRangeWrap" style="display:none;gap:6px;align-items:flex-end;flex-wrap:wrap">
+          <div>
+            <div style="font-size:.72rem;font-weight:600;color:#888;margin-bottom:4px">시작일</div>
+            <input type="date" id="debtFilterFrom" style="padding:6px 10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.82rem" onchange="renderDebtDetail()">
+          </div>
+          <div>
+            <div style="font-size:.72rem;font-weight:600;color:#888;margin-bottom:4px">종료일</div>
+            <input type="date" id="debtFilterTo" style="padding:6px 10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.82rem" onchange="renderDebtDetail()">
+          </div>
+        </div>
+        <button onclick="renderDebtDetail()" style="padding:6px 14px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:.82rem;cursor:pointer;font-weight:600">조회</button>
+        <button onclick="debtDetailAll()" style="padding:6px 14px;border-radius:8px;border:1px solid #d1d5db;background:#fff;font-size:.82rem;cursor:pointer">전체보기</button>
+      </div>
+    </div>
+    <div style="padding:0 20px 20px">
+      <div id="debtDetailBody"></div>
+    </div>
+  </div>
+</div>
+
 <script>
 /* ═══════════════════════════════════════════════════════
    DATA MODEL & STORAGE
@@ -2943,8 +2984,11 @@ function renderDebtSummary(){
       <div style="font-size:1.25rem;font-family:'JetBrains Mono',monospace;font-weight:800;color:${amtColor};margin-bottom:8px">
         ${amtSign}${fmt(Math.abs(bal))}원
       </div>
-      <div style="font-size:.78rem">
-        <span style="color:#374151">${other}에 대한 </span><span style="color:${statusColor};font-weight:700">${statusWord}</span>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
+        <div style="font-size:.78rem">
+          <span style="color:#374151">${other}에 대한 </span><span style="color:${statusColor};font-weight:700">${statusWord}</span>
+        </div>
+        <button type="button" onclick="openDebtDetail('${owner}','${other}','${a}','${b}')" style="padding:4px 10px;border-radius:8px;border:1px solid ${ownerColor};background:${ownerColor}15;color:${ownerColor};font-size:.72rem;font-weight:600;cursor:pointer">📋 내역보기</button>
       </div>
     </div>`;
   }).join('');
@@ -4317,6 +4361,183 @@ async function loadWithPassword(){
     msg.style.color='var(--green)';
     refreshAll();
   }catch(e){ msg.textContent='❌ 실패: '+e.message; msg.style.color='var(--red)'; }
+}
+
+
+/* ═══════════════════════════════════════════════════════
+   채권채무 내역보기 모달
+═══════════════════════════════════════════════════════ */
+let _ddOwner='', _ddOther='', _ddA='', _ddB='';
+
+function openDebtDetail(owner, other, a, b){
+  _ddOwner=owner; _ddOther=other; _ddA=a; _ddB=b;
+  const ownerColors={'AMT':'var(--amt)','KY':'var(--ky)','BEST':'var(--best)'};
+  const oc=ownerColors[owner]||'#888';
+  document.getElementById('debtDetailTitle').innerHTML=
+    '<span style="background:'+oc+'20;color:'+oc+';padding:2px 10px;border-radius:20px;font-weight:800">'+owner+'</span>'+
+    '<span style="margin:0 6px;color:#888">↔</span>'+
+    '<span style="font-weight:700">'+other+'</span>'+
+    '<span style="margin-left:8px;font-size:.8rem;color:#888;font-weight:400"> 채권채무 내역</span>';
+  const cm=new Date().toISOString().slice(0,7);
+  document.getElementById('debtFilterMonth').value=cm;
+  document.getElementById('debtFilterMode').value='month';
+  switchDebtFilterMode();
+  document.getElementById('debtDetailModal').style.display='block';
+  document.body.style.overflow='hidden';
+  renderDebtDetail();
+}
+
+function closeDebtDetail(){
+  document.getElementById('debtDetailModal').style.display='none';
+  document.body.style.overflow='';
+}
+
+function switchDebtFilterMode(){
+  const mode=document.getElementById('debtFilterMode').value;
+  document.getElementById('debtFilterMonthWrap').style.display=mode==='month'?'block':'none';
+  document.getElementById('debtFilterRangeWrap').style.display=mode==='range'?'flex':'none';
+}
+
+function debtDetailAll(){
+  document.getElementById('debtFilterMode').value='range';
+  switchDebtFilterMode();
+  document.getElementById('debtFilterFrom').value='2026-01-01';
+  document.getElementById('debtFilterTo').value=new Date().toISOString().slice(0,10);
+  renderDebtDetail();
+}
+
+function renderDebtDetail(){
+  const owner=_ddOwner, other=_ddOther, a=_ddA, b=_ddB;
+  if(!owner) return;
+  const mode=document.getElementById('debtFilterMode').value;
+  let fromDate='', toDate='';
+  if(mode==='month'){
+    const mo=document.getElementById('debtFilterMonth').value;
+    if(mo){
+      fromDate=mo+'-01';
+      const d=new Date(mo+'-01'); d.setMonth(d.getMonth()+1); d.setDate(0);
+      toDate=d.toISOString().slice(0,10);
+    }
+  } else {
+    fromDate=document.getElementById('debtFilterFrom').value;
+    toDate=document.getElementById('debtFilterTo').value;
+  }
+
+  const SUPPLY=['AMT_to_KY','AMT_to_BEST'];
+  const PAYMENT=['KY_to_AMT','BEST_to_AMT','KY_to_BEST','BEST_to_KY'];
+  const LOAN=['AMT_loan_KY','AMT_loan_BEST','KY_loan_BEST','KY_loan_AMT'];
+
+  function isRelated(type){
+    const {from,to}=parseTxFromTo(type);
+    return (from===a&&to===b)||(from===b&&to===a)||type==='adj_'+a+'_'+b||type==='adj_'+b+'_'+a;
+  }
+
+  let allItems=[];
+
+  // txLogs
+  txLogs.forEach(function(t){
+    if(!isRelated(t.type)) return;
+    const isAdj=t.type.startsWith('adj_');
+    let effect=0;
+    if(isAdj){
+      effect=(t.type==='adj_'+a+'_'+b)?t.adjAmt:-t.adjAmt;
+      if(owner!==a) effect=-effect;
+    } else {
+      const ft=parseTxFromTo(t.type);
+      const from=ft.from, to=ft.to;
+      if(SUPPLY.includes(t.type)||LOAN.includes(t.type)){
+        effect=(from===a&&to===b)?t.amount:-t.amount;
+        if(owner!==a) effect=-effect;
+      } else if(PAYMENT.includes(t.type)){
+        effect=(to===a&&from===b)?-t.amount:t.amount;
+        if(owner!==a) effect=-effect;
+      }
+    }
+    allItems.push({date:t.date,label:txTypeLabel(t.type),amount:isAdj?Math.abs(t.adjAmt||0):t.amount,effect:effect,memo:t.memo||'',src:'거래'});
+  });
+
+  // internalTrades (AMT↔KY만)
+  if((a==='AMT'&&b==='KY')||(a==='KY'&&b==='AMT')){
+    internalTrades.forEach(function(t){
+      let effect=(a==='AMT')?t.total:-t.total;
+      if(owner!==a) effect=-effect;
+      allItems.push({date:t.date,label:'AMT→KY 물품공급('+t.product+' '+fmt(t.qty)+'개)',amount:t.total,effect:effect,memo:t.memo||'',src:'물품'});
+    });
+  }
+
+  // bestReturns
+  bestReturns.forEach(function(r){
+    const fromCo=(r.fromType==='AMT_to_BEST'||r.from==='AMT')?'AMT':(r.fromType==='KY_to_BEST'||r.from==='KY')?'KY':null;
+    if(!fromCo) return;
+    const pA=(fromCo==='AMT')?'AMT':'KY', pB='BEST';
+    if(!((pA===a&&pB===b)||(pA===b&&pB===a))) return;
+    let effect=(fromCo===a)?r.total:-r.total;
+    if(owner!==a) effect=-effect;
+    allItems.push({date:r.date,label:'반품('+fromCo+'→BEST) '+r.product,amount:r.total,effect:effect,memo:r.memo||'',src:'반품'});
+  });
+
+  allItems.sort(function(x,y){ return x.date.localeCompare(y.date)||(x.date===y.date?0:0); });
+
+  // 누적잔액 계산
+  let running=0;
+  allItems=allItems.map(function(it){ running+=it.effect; return Object.assign({},it,{running:running}); });
+
+  const totalBal=running;
+  const isCredit=totalBal>=0;
+  const balColor=isCredit?'#2563eb':'#dc2626';
+  const ownerColors={'AMT':'var(--amt)','KY':'var(--ky)','BEST':'var(--best)'};
+  const oc=ownerColors[owner]||'#888';
+  document.getElementById('debtDetailBalance').innerHTML=
+    '<div style="display:flex;gap:10px;flex-wrap:wrap">'+
+    '<div style="flex:1;min-width:140px;background:#f8fafc;border-radius:10px;padding:12px;border-left:3px solid '+balColor+'">'+
+    '<div style="font-size:.72rem;color:#888;margin-bottom:4px">현재 누적 잔액 ('+owner+' 기준)</div>'+
+    '<div style="font-size:1.1rem;font-weight:800;color:'+balColor+';font-family:\'JetBrains Mono\',monospace">'+(totalBal<0?'-':'')+fmt(Math.abs(totalBal))+'원</div>'+
+    '<div style="font-size:.75rem;margin-top:2px;color:'+balColor+';font-weight:600">'+other+'에 대한 '+(isCredit?'채권':'채무')+'</div></div>'+
+    '<div style="flex:1;min-width:140px;background:#f8fafc;border-radius:10px;padding:12px">'+
+    '<div style="font-size:.72rem;color:#888;margin-bottom:4px">전체 거래 건수</div>'+
+    '<div style="font-size:1.1rem;font-weight:800">'+allItems.length+'건</div></div></div>';
+
+  // 기간 필터
+  let filtered=allItems;
+  if(fromDate) filtered=filtered.filter(function(it){ return it.date>=fromDate; });
+  if(toDate)   filtered=filtered.filter(function(it){ return it.date<=toDate; });
+
+  const body=document.getElementById('debtDetailBody');
+  if(!filtered.length){
+    body.innerHTML='<div style="text-align:center;padding:30px;color:#888;font-size:.85rem">해당 기간에 거래내역이 없습니다.</div>';
+    return;
+  }
+
+  const periodEffect=filtered.reduce(function(s,it){ return s+it.effect; },0);
+  const periodStart=filtered[0].running-filtered[0].effect;
+  const periodEnd=filtered[filtered.length-1].running;
+
+  const srcColors={'거래':'#2563eb','물품':'#7c3aed','반품':'#059669','조정':'#d97706'};
+
+  body.innerHTML=
+    '<div style="background:#eff6ff;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:.8rem;display:flex;gap:16px;flex-wrap:wrap">'+
+    '<span>조회기간 <b>'+filtered.length+'건</b></span>'+
+    '<span>기간 변화 <b style="color:'+(periodEffect>=0?'#2563eb':'#dc2626')+'">'+(periodEffect>=0?'+':'')+fmt(periodEffect)+'원</b></span>'+
+    '<span>시작잔액 <b>'+fmt(periodStart)+'원</b></span>'+
+    '<span>종료잔액 <b style="color:'+(periodEnd>=0?'#2563eb':'#dc2626')+'">'+fmt(periodEnd)+'원</b></span></div>'+
+    '<div class="table-wrap"><table>'+
+    '<thead><tr><th>날짜</th><th>구분</th><th>거래유형</th><th style="text-align:right">금액</th><th style="text-align:right">'+owner+' 변화</th><th style="text-align:right">누적잔액</th><th>메모</th></tr></thead>'+
+    '<tbody>'+
+    filtered.map(function(it){
+      const ec=it.effect>=0?'#2563eb':'#dc2626';
+      const rc=it.running>=0?'#2563eb':'#dc2626';
+      const sc=srcColors[it.src]||'#888';
+      return '<tr>'+
+        '<td class="td-mono" style="white-space:nowrap">'+it.date+'</td>'+
+        '<td><span style="background:'+sc+'20;color:'+sc+';padding:1px 6px;border-radius:8px;font-size:.68rem;font-weight:700">'+it.src+'</span></td>'+
+        '<td style="font-size:.75rem">'+it.label+'</td>'+
+        '<td class="td-mono" style="text-align:right">'+fmt(it.amount)+'원</td>'+
+        '<td class="td-mono" style="text-align:right;font-weight:700;color:'+ec+'">'+(it.effect>=0?'+':'')+fmt(it.effect)+'원</td>'+
+        '<td class="td-mono" style="text-align:right;font-weight:700;color:'+rc+'">'+(it.running<0?'-':'')+fmt(Math.abs(it.running))+'원</td>'+
+        '<td style="font-size:.72rem;color:#888">'+it.memo+'</td>'+
+        '</tr>';
+    }).join('')+
+    '</tbody></table></div>';
 }
 
 function closeRecModal(){ document.getElementById('recModal').classList.remove('open'); }
