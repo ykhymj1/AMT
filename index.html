@@ -696,7 +696,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
 <div class="page" id="page-internal">
 
   <!-- 잔액 요약 카드 -->
-  <div id="debtSummary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px"></div>
+  <div id="debtSummary" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px"></div>
 
   <!-- 탭 -->
   <div class="tab-bar">
@@ -2984,12 +2984,10 @@ function renderDebtSummary(){
       <div style="font-size:1.25rem;font-family:'JetBrains Mono',monospace;font-weight:800;color:${amtColor};margin-bottom:8px">
         ${amtSign}${fmt(Math.abs(bal))}원
       </div>
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px">
-        <div style="font-size:.78rem">
-          <span style="color:#374151">${other}에 대한 </span><span style="color:${statusColor};font-weight:700">${statusWord}</span>
-        </div>
-        <button type="button" onclick="openDebtDetail('${owner}','${other}','${a}','${b}')" style="padding:4px 10px;border-radius:8px;border:1px solid ${ownerColor};background:${ownerColor}15;color:${ownerColor};font-size:.72rem;font-weight:600;cursor:pointer">📋 내역보기</button>
+      <div style="font-size:.78rem;margin-top:4px">
+        <span style="color:#374151">${other}에 대한 </span><span style="color:${statusColor};font-weight:700">${statusWord}</span>
       </div>
+      <button type="button" onclick="openDebtDetail('${owner}','${other}','${a}','${b}')" style="margin-top:10px;width:100%;padding:7px 0;border-radius:8px;border:1px solid ${ownerColor};background:${ownerColor}15;color:${ownerColor};font-size:.75rem;font-weight:700;cursor:pointer;display:block">📋 내역보기</button>
     </div>`;
   }).join('');
 }
