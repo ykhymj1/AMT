@@ -1410,7 +1410,8 @@ function loadLS(){
     invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; });
   }catch(e){resetDealers();}
 }
-function saveLS(){
+// localStorage만 저장 (Firebase 업로드 없음) — 내부 전용
+function _saveLSOnly(){
   const now=new Date().toISOString();
   localStorage.setItem('amt_updatedAt', now);
   localStorage.setItem(LS_DEALERS,JSON.stringify(dealers));
@@ -1418,14 +1419,19 @@ function saveLS(){
   localStorage.setItem(LS_INV,JSON.stringify(invLogs));
   localStorage.setItem(LS_PRODS,JSON.stringify(products));
   localStorage.setItem(LS_INTERNAL,JSON.stringify(internalTrades));
-  // 감사 로그는 최근 500건만 유지
   if(auditLogs.length>1000) auditLogs=auditLogs.slice(-1000);
   localStorage.setItem(LS_AUDIT,JSON.stringify(auditLogs));
   localStorage.setItem(LS_TX,JSON.stringify(txLogs));
   localStorage.setItem(LS_BEST,JSON.stringify(bestReturns));
   localStorage.setItem(LS_KY_RET,JSON.stringify(kyReturns));
-  // 비밀번호 자동동기화: 데이터 저장 시 Firebase에 자동 업로드
-  _autoUploadOnSave();
+}
+
+let _autoUploadTimer = null;
+function saveLS(){
+  _saveLSOnly();
+  // 비밀번호 자동동기화: 연속 저장 시 마지막 1회만 업로드 (debounce 800ms)
+  clearTimeout(_autoUploadTimer);
+  _autoUploadTimer = setTimeout(()=>{ _autoUploadOnSave(); }, 800);
 }
 
 /* ═══ 기본 대리점 데이터 ═══ */
@@ -1616,7 +1622,10 @@ function init(){
   // Firebase 자동 동기화 + 일 1회 자동 백업
   const fb=window._fb;
   if(fb&&fb.ready){
-    fbSync().then(()=>{ fbStartListener(); fbBackupToday(); });
+    fbSync().then(()=>{ fbStartListener(); fbBackupToday(); initAutoSync(); });
+  } else {
+    // Firebase 미연결 시에도 UI 상태는 업데이트
+    initAutoSync();
   }
 
   refreshAll();
@@ -4016,9 +4025,12 @@ function clearSavedPw(){
 }
 
 // Firebase에 업로드
+let _pwUploading = false;
 async function _pwUpload(pw){
+  if(_pwUploading) return; // 이미 업로드 중이면 중복 실행 방지
+  _pwUploading = true;
   const fb = window._fb;
-  if(!fb||!fb.ready) return;
+  if(!fb||!fb.ready){ _pwUploading=false; return; }
   try{
     const key = await hashPassword(pw);
     const now = new Date().toISOString();
@@ -4026,6 +4038,7 @@ async function _pwUpload(pw){
     await fb.set(fb.ref(fb.db,'amt_pw/'+key), payload);
     localStorage.setItem('amt_pw_uploadedAt', now);
   }catch(e){ console.warn('pw upload fail',e); }
+  finally{ _pwUploading=false; }
 }
 
 // Firebase에서 다운로드 (변경된 경우만 적용)
@@ -4051,7 +4064,7 @@ async function _pwDownload(pw, silent){
     if(remote.txLogs) txLogs=remote.txLogs;
     if(remote.bestReturns) bestReturns=remote.bestReturns;
     localStorage.setItem('amt_pw_uploadedAt', remoteTime);
-    saveLS();
+    _saveLSOnly();
     refreshAll();
     if(!silent) toast('📱 다른 기기 데이터를 자동으로 가져왔습니다','info');
   }catch(e){ console.warn('pw download fail',e); }
@@ -4082,7 +4095,7 @@ async function _startPwListener(pw){
     if(remote.txLogs) txLogs=remote.txLogs;
     if(remote.bestReturns) bestReturns=remote.bestReturns;
     localStorage.setItem('amt_pw_uploadedAt', remoteTime);
-    saveLS();
+    _saveLSOnly();
     refreshAll();
     toast('📱 다른 기기에서 데이터가 자동으로 업데이트되었습니다','info');
   });
@@ -4142,7 +4155,7 @@ async function manualDownload(){
     if(remote.txLogs) txLogs=remote.txLogs;
     if(remote.bestReturns) bestReturns=remote.bestReturns;
     localStorage.setItem('amt_pw_uploadedAt', remote._updatedAt||new Date().toISOString());
-    saveLS();
+    _saveLSOnly();
     refreshAll();
     msg.textContent='✅ 가져오기 완료! (저장시각: '+remoteTime+')';
     msg.style.color='var(--green)';
@@ -4227,7 +4240,7 @@ document.addEventListener('visibilitychange',()=>{
 });
 
 // START
-window.addEventListener('DOMContentLoaded',()=>{ init(); handleResize(); initAutoSync(); });
+window.addEventListener('DOMContentLoaded',()=>{ init(); handleResize(); });
 
 // PWA Service Worker 등록 (github.io 배포 환경에서만)
 if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
