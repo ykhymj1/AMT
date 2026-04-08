@@ -2436,12 +2436,17 @@ function renderInvHistory(){
 
   if(!list.length){ document.getElementById('invHistory').innerHTML=emptyHtml('이력 없음'); return; }
   document.getElementById('invHistory').innerHTML=`<div class="table-wrap"><table>
-    <thead><tr><th>날짜</th><th>회사</th><th>제품</th><th>구분</th><th>수량</th><th>메모</th></tr></thead>
+    <thead><tr><th>날짜</th><th>회사</th><th>제품</th><th>구분</th><th>수량</th><th>메모</th><th style="text-align:center">수정</th><th style="text-align:center">삭제</th></tr></thead>
     <tbody>
     ${list.map(i=>{
       const c=pColors[i.product]||'var(--gray)';
       const tc=i.type==='out'?'var(--red)':i.type==='adjust'?'var(--yellow)':'var(--green)';
       const co=i.company||'AMT';
+      const isAuto=!!(i.relOrder||i.relInternal); // 자동생성 여부
+      const editBtn=isAuto
+        ? `<button class="btn btn-xs btn-ghost" style="opacity:.4;cursor:not-allowed" title="발주/내부거래 연동항목은 수정불가">🔒</button>`
+        : `<button class="btn btn-xs btn-outline" onclick="openEditInvLog('${i.id}')" title="수정">✏️</button>`;
+      const delBtn=`<button class="btn btn-danger btn-xs" onclick="deleteInvLog('${i.id}','${isAuto}')" title="삭제">✕</button>`;
       return `<tr>
         <td class="td-mono">${i.date}</td>
         <td><span class="${co==='AMT'?'company-badge-amt':'company-badge-ky'}">${co}</span></td>
@@ -2449,10 +2454,92 @@ function renderInvHistory(){
         <td style="color:${tc};font-weight:600;font-size:.75rem">${i.type==='in'?'입고':i.type==='out'?'출고':'조정'}</td>
         <td class="td-mono td-r" style="color:${i.qty<0?'var(--red)':'var(--green)'};font-weight:700">${i.qty>0?'+':''}${fmt(i.qty)}</td>
         <td style="font-size:.75rem;color:var(--text2)">${i.memo||''}</td>
+        <td class="td-c">${editBtn}</td>
+        <td class="td-c">${delBtn}</td>
       </tr>`;
     }).join('')}
     </tbody>
   </table></div>`;
+}
+
+// 재고이력 수정 모달
+function openEditInvLog(id){
+  const i=invLogs.find(x=>x.id===id);
+  if(!i) return;
+  const old=document.getElementById('editInvModal');
+  if(old) old.remove();
+
+  const modal=document.createElement('div');
+  modal.id='editInvModal';
+  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999';
+  modal.innerHTML=`
+    <div style="background:#fff;border-radius:12px;padding:24px;min-width:300px;max-width:400px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,.18)">
+      <div style="font-size:1rem;font-weight:700;margin-bottom:16px">재고이력 수정</div>
+      <div style="font-size:.82rem;background:#f8fafc;border-radius:8px;padding:10px;margin-bottom:14px">
+        <b>${i.company||'AMT'}</b> · ${i.product} · ${i.type==='in'?'입고':i.type==='out'?'출고':'조정'}
+      </div>
+      <div style="display:grid;gap:12px">
+        <div>
+          <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:4px">날짜</label>
+          <input type="date" id="editInvDate" value="${i.date}"
+            style="width:100%;padding:8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.9rem;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:4px">수량 (입고:양수, 출고:음수)</label>
+          <input type="number" id="editInvQty" value="${i.qty}"
+            style="width:100%;padding:8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.9rem;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:4px">메모</label>
+          <input type="text" id="editInvMemo" value="${i.memo||''}"
+            style="width:100%;padding:8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.9rem;box-sizing:border-box">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+        <button type="button" onclick="document.getElementById('editInvModal').remove()"
+          style="padding:8px 16px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;cursor:pointer;font-size:.85rem">취소</button>
+        <button type="button" onclick="confirmEditInvLog('${id}')"
+          style="padding:8px 18px;border-radius:8px;border:none;background:#2563eb;color:#fff;cursor:pointer;font-size:.85rem;font-weight:600">저장</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e=>{ if(e.target===modal) modal.remove(); });
+}
+
+async function confirmEditInvLog(id){
+  const i=invLogs.find(x=>x.id===id);
+  if(!i) return;
+  const newDate=document.getElementById('editInvDate').value;
+  const newQty=parseInt(document.getElementById('editInvQty').value)||0;
+  const newMemo=document.getElementById('editInvMemo').value;
+  if(!newDate){ toast('날짜를 입력하세요','error'); return; }
+  if(newQty===0){ toast('수량은 0이 될 수 없습니다','error'); return; }
+
+  const oldQty=i.qty;
+  addAuditLog('edit','재고',`수정: ${i.company||'AMT'} ${i.product} ${i.type} 수량:${oldQty}→${newQty} 날짜:${i.date}→${newDate} 메모:${i.memo||''}→${newMemo}`);
+  i.date=newDate;
+  i.qty=newQty;
+  i.memo=newMemo;
+  // type 자동 보정 (수량 부호에 따라)
+  if(i.type!=='adjust'){
+    i.type=newQty>0?'in':'out';
+  }
+  saveLS(); await fbSaveAll();
+  document.getElementById('editInvModal').remove();
+  toast('재고이력 수정 완료','success');
+  renderInvCards(); renderInvHistory();
+}
+
+async function deleteInvLog(id, isAuto){
+  const i=invLogs.find(x=>x.id===id);
+  if(!i) return;
+  const autoMsg=isAuto==='true'?'\n⚠️ 이 항목은 발주/내부거래와 연동된 자동생성 항목입니다.\n연동된 데이터와 불일치가 생길 수 있습니다.\n':'\n';
+  if(!confirm(`재고이력을 삭제할까요?${autoMsg}\n${i.company||'AMT'} · ${i.product} · ${i.type==='in'?'입고':i.type==='out'?'출고':'조정'} ${i.qty>0?'+':''}${fmt(i.qty)}개`)) return;
+  addAuditLog('delete','재고',`삭제: ${i.company||'AMT'} ${i.product} ${i.date} ${i.qty>0?'+':''}${i.qty}개 ${i.memo||''}`,i);
+  invLogs=invLogs.filter(x=>x.id!==id);
+  saveLS(); await fbSaveAll();
+  toast('재고이력 삭제 완료','info');
+  renderInvCards(); renderInvHistory();
 }
 
 /* ═══════════════════════════════════════════════════════
