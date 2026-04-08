@@ -1486,6 +1486,56 @@ function ym(ds){ return String(ds||'').slice(0,7); }
 function ymd(){ return fmtDateLocal(new Date()); }
 function orderAmount(o){ return (Number(o&&o.total)||0) + (Number(o&&o.fee)||0); }
 
+/* ─── 대한민국 공휴일 (토요일/공휴일이면 전날 영업일로 조정) ───
+   대체공휴일 포함. 매년 고정 + 음력계산 없이 주요 날짜 하드코딩.
+   필요 시 연도 추가 가능. ─────────────────────────────────── */
+const KR_HOLIDAYS = new Set([
+  // 2025
+  '2025-01-01','2025-01-28','2025-01-29','2025-01-30',
+  '2025-03-01','2025-05-05','2025-05-06','2025-06-06',
+  '2025-08-15','2025-10-03','2025-10-06','2025-10-07','2025-10-08',
+  '2025-12-25',
+  // 2026
+  '2026-01-01','2026-01-28','2026-01-29','2026-01-30',
+  '2026-03-01','2026-03-02', // 3/1 일요일 → 3/2 대체
+  '2026-05-05','2026-06-06','2026-08-17', // 8/15 토 → 8/17 대체
+  '2026-09-24','2026-09-25','2026-09-26',
+  '2026-10-03','2026-10-05', // 10/3 토 → 10/5 대체
+  '2026-10-09','2026-12-25',
+  // 2027
+  '2027-01-01','2027-02-17','2027-02-18','2027-02-19',
+  '2027-03-01','2027-05-05','2027-05-24','2027-05-25',
+  '2027-06-06','2027-06-07', // 6/6 일 → 6/7 대체
+  '2027-08-15','2027-08-16', // 8/15 일 → 8/16 대체
+  '2027-10-03','2027-10-14','2027-10-15',
+  '2027-10-09','2027-10-11', // 10/9 토 → 10/11 대체
+  '2027-12-25','2027-12-27', // 12/25 토 → 12/27 대체
+]);
+
+// 날짜가 토요일 또는 공휴일이면 true
+function isNonBizDay(ds){
+  const d = parseDateLocal(ds);
+  const dow = d.getDay(); // 0=일, 6=토
+  if(dow === 6) return true;          // 토요일
+  if(KR_HOLIDAYS.has(ds)) return true; // 공휴일
+  return false;
+}
+
+// 말일 기준으로 토요일/공휴일이면 하루씩 앞으로 당김 (영업일 찾기)
+function prevBizDay(ds){
+  let cur = ds;
+  while(isNonBizDay(cur)){
+    cur = addDays(cur, -1);
+  }
+  return cur;
+}
+
+// eom: 말일 계산 후 토요일/공휴일 조정
+function eomBiz(y, m){
+  const lastDay = eom(y, m);
+  return prevBizDay(lastDay);
+}
+
 function calcDue(orderDate, term, dealerId){
   const d=parseDateLocal(orderDate);
   const y=d.getFullYear(), m=d.getMonth()+1;
@@ -1497,8 +1547,8 @@ function calcDue(orderDate, term, dealerId){
   switch(term){
     case 'same':      return orderDate;
     case 'same_next': return orderDate; // 보수적: 당일
-    case 'eom':       return eom(y,m);
-    case 'eom_next':  return m===12?eom(y+1,1):eom(y,m+1);
+    case 'eom':       return eomBiz(y, m);           // 말일 → 토/공휴일이면 전날
+    case 'eom_next':  return m===12 ? eomBiz(y+1,1) : eomBiz(y, m+1); // 다음달 말일 동일 적용
     default:          return orderDate;
   }
 }
