@@ -2443,9 +2443,7 @@ function renderInvHistory(){
       const tc=i.type==='out'?'var(--red)':i.type==='adjust'?'var(--yellow)':'var(--green)';
       const co=i.company||'AMT';
       const isAuto=!!(i.relOrder||i.relInternal); // 자동생성 여부
-      const editBtn=isAuto
-        ? `<button class="btn btn-xs btn-ghost" style="opacity:.4;cursor:not-allowed" title="발주/내부거래 연동항목은 수정불가">🔒</button>`
-        : `<button class="btn btn-xs btn-outline" onclick="openEditInvLog('${i.id}')" title="수정">✏️</button>`;
+      const editBtn=`<button class="btn btn-xs btn-outline" onclick="openEditInvLog('${i.id}','${isAuto}')" title="${isAuto?'⚠️ 연동항목 수정':'수정'}">✏️${isAuto?' ⚠':''}</button>`;
       const delBtn=`<button class="btn btn-danger btn-xs" onclick="deleteInvLog('${i.id}','${isAuto}')" title="삭제">✕</button>`;
       return `<tr>
         <td class="td-mono">${i.date}</td>
@@ -2463,11 +2461,16 @@ function renderInvHistory(){
 }
 
 // 재고이력 수정 모달
-function openEditInvLog(id){
+function openEditInvLog(id, isAuto){
   const i=invLogs.find(x=>x.id===id);
   if(!i) return;
   const old=document.getElementById('editInvModal');
   if(old) old.remove();
+
+  const autoWarn = (isAuto==='true'||isAuto===true)
+    ? `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:.78rem;color:#92400e">
+        ⚠️ 발주/내부거래 연동 자동생성 항목입니다.<br>수정 시 원본 데이터와 불일치가 생길 수 있습니다.
+       </div>` : '';
 
   const modal=document.createElement('div');
   modal.id='editInvModal';
@@ -2475,6 +2478,7 @@ function openEditInvLog(id){
   modal.innerHTML=`
     <div style="background:#fff;border-radius:12px;padding:24px;min-width:300px;max-width:400px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,.18)">
       <div style="font-size:1rem;font-weight:700;margin-bottom:16px">재고이력 수정</div>
+      ${autoWarn}
       <div style="font-size:.82rem;background:#f8fafc;border-radius:8px;padding:10px;margin-bottom:14px">
         <b>${i.company||'AMT'}</b> · ${i.product} · ${i.type==='in'?'입고':i.type==='out'?'출고':'조정'}
       </div>
