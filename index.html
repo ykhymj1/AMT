@@ -1034,6 +1034,39 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
 
   <div id="invCards"></div>
 
+  <!-- ── 기간별 재고 조회 ── -->
+  <div class="card" style="margin-top:12px">
+    <div class="card-header">
+      <div class="card-title"><div class="card-title-dot" style="background:var(--blue)"></div>📅 기간별 재고 조회</div>
+      <button class="btn btn-ghost btn-sm" onclick="renderInvRange()">🔍 조회</button>
+    </div>
+    <div class="filter-bar" style="margin-bottom:12px">
+      <div class="filter-group">
+        <label>시작일 <span class="req">*</span></label>
+        <input type="date" id="invRangeFrom" onchange="renderInvRange()">
+      </div>
+      <div class="filter-group">
+        <label>종료일 <span class="req">*</span></label>
+        <input type="date" id="invRangeTo" onchange="renderInvRange()">
+      </div>
+      <div class="filter-group">
+        <label>회사</label>
+        <select id="invRangeC" onchange="renderInvRange()">
+          <option value="">전체</option>
+          <option value="AMT">AMT</option>
+          <option value="KY">KY</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>제품</label>
+        <select id="invRangeP" onchange="renderInvRange()">
+          <option value="">전체</option>
+        </select>
+      </div>
+    </div>
+    <div id="invRangeResult"></div>
+  </div>
+
   <div class="card" style="margin-top:16px">
     <div class="card-header">
       <div class="card-title">
@@ -1648,6 +1681,10 @@ function init(){
   const _setVal=(id,v)=>{ const el=document.getElementById(id); if(el) el.value=v; };
   _setVal('oDate',today());
   _setVal('invDate',today());
+  // 기간별 재고조회 기본값: 이번달 1일 ~ 오늘
+  const _nm=new Date(); const _y=_nm.getFullYear(),_m=String(_nm.getMonth()+1).padStart(2,'0');
+  _setVal('invRangeFrom',`${_y}-${_m}-01`);
+  _setVal('invRangeTo',today());
   _setVal('itDate',today());
   _setVal('txDate',today());
   _setVal('bestDate',today());
@@ -1684,6 +1721,7 @@ function refreshAll(){
   renderRecList();
   renderInvCards();
   renderInvHistory();
+  renderInvRange();
   renderDealerCards();
   renderReport();
   renderDebtSummary();
@@ -1741,7 +1779,7 @@ function populateSelects(){
   }
 
   // 재고 제품
-  ['invProd','invFilterP','itProduct','itFilterP'].forEach(id=>{
+  ['invProd','invFilterP','itProduct','itFilterP','invRangeP'].forEach(id=>{
     const el=document.getElementById(id); if(!el) return;
     const v=el.value;
     const isFilter=id.includes('Filter');
@@ -2378,6 +2416,159 @@ function switchInvCompany(company, btn){
   document.getElementById('invAdjTitle').textContent=company;
   document.getElementById('invSaveBtn').style.background=company==='AMT'?'var(--amt)':'var(--ky)';
   renderInvCards();
+}
+
+/* ═══════════════════════════════════════════════════════
+   기간별 재고 조회
+   기간 내 invLogs를 날짜순 처리하여
+   ① 기간 시작 전 재고(이월재고) ② 기간 내 입출고 ③ 기간 말 재고 를 계산
+═══════════════════════════════════════════════════════ */
+function calcStockAt(prod, company, uptoDate){
+  // uptoDate(포함) 이전의 모든 로그로 재고 계산
+  let total=0;
+  let logs=invLogs.filter(i=>i.product===prod && (company?((i.company||'AMT')===company):true));
+  logs=logs.filter(i=>i.date<=uptoDate).sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt.localeCompare(b.createdAt));
+  logs.forEach(i=>{
+    if(i.type==='adjust') total=i.qty;
+    else total+=i.qty;
+  });
+  return total;
+}
+
+function renderInvRange(){
+  const fromEl=document.getElementById('invRangeFrom');
+  const toEl=document.getElementById('invRangeTo');
+  const companyFilter=document.getElementById('invRangeC')?document.getElementById('invRangeC').value:'';
+  const prodFilter=document.getElementById('invRangeP')?document.getElementById('invRangeP').value:'';
+  const el=document.getElementById('invRangeResult');
+  if(!el) return;
+
+  const fromDate=(fromEl&&fromEl.value)||'';
+  const toDate=(toEl&&toEl.value)||today();
+
+  if(!fromDate){ el.innerHTML=emptyHtml('시작일을 선택하세요'); return; }
+  if(fromDate>toDate){ el.innerHTML=`<div style="color:var(--red);padding:12px;font-size:.82rem">⚠️ 시작일이 종료일보다 늦습니다</div>`; return; }
+
+  const companies=companyFilter?[companyFilter]:['AMT','KY'];
+  const prods=prodFilter?[prodFilter]:[...products];
+  const pColors={'JUC':'var(--juc)','MEDIAS':'var(--medias)','DELL':'var(--dell)'};
+
+  // 기간 내 로그 추출
+  let rangeInvLogs=[...invLogs].filter(i=>i.date>=fromDate&&i.date<=toDate);
+  if(companyFilter) rangeInvLogs=rangeInvLogs.filter(i=>(i.company||'AMT')===companyFilter);
+  if(prodFilter) rangeInvLogs=rangeInvLogs.filter(i=>i.product===prodFilter);
+  rangeInvLogs.sort((a,b)=>a.date.localeCompare(b.date)||a.createdAt.localeCompare(b.createdAt));
+
+  // 기간 시작 전날까지의 재고 = 이월재고
+  const prevDate=fromDate>='2000-01-02'?addDays(fromDate,-1):'1999-12-31';
+
+  // 회사×제품별 집계
+  const rows=[];
+  companies.forEach(co=>{
+    prods.forEach(p=>{
+      const startQty=calcStockAt(p,co,prevDate);
+      const endQty=calcStockAt(p,co,toDate);
+
+      // 기간 내 입고/출고 합산
+      const periodLogs=rangeInvLogs.filter(i=>i.product===p&&(i.company||'AMT')===co);
+      let inQty=0, outQty=0, adjCount=0;
+      periodLogs.forEach(i=>{
+        if(i.type==='in') inQty+=i.qty;
+        else if(i.type==='out') outQty+=Math.abs(i.qty);
+        else if(i.type==='adjust') adjCount++;
+      });
+      const diff=endQty-startQty; // 순증감
+      rows.push({co,p,startQty,inQty,outQty,adjCount,diff,endQty,logs:periodLogs});
+    });
+  });
+
+  // ── 요약 카드 ──
+  let summaryHtml='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px;margin-bottom:14px">';
+  rows.forEach(({co,p,startQty,inQty,outQty,diff,endQty})=>{
+    const c=pColors[p]||'var(--blue)';
+    const coColor=co==='AMT'?'var(--amt)':'var(--ky)';
+    const diffColor=diff>0?'var(--green)':diff<0?'var(--red)':'var(--gray)';
+    const diffSign=diff>0?'+':'';
+    summaryHtml+=`<div style="background:#fff;border:1px solid var(--border);border-radius:12px;padding:16px;box-shadow:var(--shadow-sm);border-top:3px solid ${c}">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-weight:800;font-size:.9rem;color:${c}">${p}</span>
+        <span style="background:${co==='AMT'?'var(--amt-bg)':'var(--ky-bg)'};color:${coColor};padding:2px 8px;border-radius:10px;font-size:.7rem;font-weight:700">${co}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:.78rem">
+        <div style="background:var(--surface2);border-radius:6px;padding:8px;text-align:center">
+          <div style="color:var(--text3);font-size:.68rem;margin-bottom:2px">기초재고</div>
+          <div style="font-weight:800;color:var(--text);font-family:'JetBrains Mono',monospace">${fmt(startQty)}</div>
+        </div>
+        <div style="background:var(--surface2);border-radius:6px;padding:8px;text-align:center">
+          <div style="color:var(--text3);font-size:.68rem;margin-bottom:2px">기말재고</div>
+          <div style="font-weight:800;color:${endQty<0?'var(--red)':endQty<10?'var(--yellow)':'var(--text)'};font-family:'JetBrains Mono',monospace">${fmt(endQty)}</div>
+        </div>
+        <div style="background:var(--green-light);border-radius:6px;padding:8px;text-align:center">
+          <div style="color:var(--green);font-size:.68rem;margin-bottom:2px">입고</div>
+          <div style="font-weight:700;color:var(--green);font-family:'JetBrains Mono',monospace">+${fmt(inQty)}</div>
+        </div>
+        <div style="background:var(--red-light);border-radius:6px;padding:8px;text-align:center">
+          <div style="color:var(--red);font-size:.68rem;margin-bottom:2px">출고</div>
+          <div style="font-weight:700;color:var(--red);font-family:'JetBrains Mono',monospace">-${fmt(outQty)}</div>
+        </div>
+      </div>
+      <div style="margin-top:10px;padding:6px 10px;border-radius:6px;background:${diff>0?'var(--green-light)':diff<0?'var(--red-light)':'var(--gray-light)'};display:flex;justify-content:space-between;align-items:center">
+        <span style="font-size:.72rem;color:var(--text2)">순증감</span>
+        <span style="font-weight:800;color:${diffColor};font-family:'JetBrains Mono',monospace;font-size:.88rem">${diffSign}${fmt(diff)}개</span>
+      </div>
+    </div>`;
+  });
+  summaryHtml+='</div>';
+
+  // ── 상세 이력 테이블 ──
+  let tableHtml='';
+  if(rangeInvLogs.length){
+    tableHtml=`<div style="margin-top:4px">
+      <div style="font-size:.78rem;font-weight:700;color:var(--text2);margin-bottom:8px;padding:4px 0;border-bottom:1px solid var(--border)">
+        📋 기간 내 상세 이력 (${rangeInvLogs.length}건)
+      </div>
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>날짜</th><th>회사</th><th>제품</th><th>구분</th>
+          <th class="td-r">수량</th><th>메모</th>
+        </tr></thead>
+        <tbody>
+        ${rangeInvLogs.map(i=>{
+          const c=pColors[i.product]||'var(--gray)';
+          const coColor=(i.company||'AMT')==='AMT'?'var(--amt)':'var(--ky)';
+          const isIn=i.type==='in',isAdj=i.type==='adjust';
+          const qColor=isAdj?'var(--yellow)':i.qty>0?'var(--green)':'var(--red)';
+          const qSign=isAdj?'=':i.qty>0?'+':'';
+          const typeBadge=isAdj
+            ?'<span style="background:var(--yellow-light);color:var(--yellow);padding:1px 6px;border-radius:8px;font-size:.68rem;font-weight:700">조정</span>'
+            :i.qty>0
+            ?'<span style="background:var(--green-light);color:var(--green);padding:1px 6px;border-radius:8px;font-size:.68rem;font-weight:700">입고</span>'
+            :'<span style="background:var(--red-light);color:var(--red);padding:1px 6px;border-radius:8px;font-size:.68rem;font-weight:700">출고</span>';
+          return `<tr>
+            <td class="td-mono" style="font-size:.8rem">${i.date}</td>
+            <td><span style="background:${(i.company||'AMT')==='AMT'?'var(--amt-bg)':'var(--ky-bg)'};color:${coColor};padding:1px 6px;border-radius:8px;font-size:.68rem;font-weight:700">${i.company||'AMT'}</span></td>
+            <td><span style="background:${c}20;color:${c};padding:1px 6px;border-radius:8px;font-size:.68rem;font-weight:700">${i.product}</span></td>
+            <td>${typeBadge}</td>
+            <td class="td-mono td-r" style="color:${qColor};font-weight:700">${qSign}${fmt(Math.abs(i.qty))}</td>
+            <td style="font-size:.75rem;color:var(--text2);max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.memo||''}</td>
+          </tr>`;
+        }).join('')}
+        </tbody>
+      </table></div>
+    </div>`;
+  } else {
+    tableHtml=emptyHtml('기간 내 재고 변동 없음');
+  }
+
+  el.innerHTML=`
+    <div style="font-size:.75rem;color:var(--text3);margin-bottom:12px;padding:6px 10px;background:var(--surface2);border-radius:6px">
+      📆 <b>${fromDate}</b> ~ <b>${toDate}</b>
+      ${companyFilter?` · <b>${companyFilter}</b>`:''}
+      ${prodFilter?` · <b>${prodFilter}</b>`:''}
+    </div>
+    ${summaryHtml}
+    ${tableHtml}
+  `;
 }
 
 function renderInvCards(){
