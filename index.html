@@ -1512,10 +1512,11 @@ const KR_HOLIDAYS = new Set([
   '2027-12-25','2027-12-27', // 12/25 토 → 12/27 대체
 ]);
 
-// 날짜가 토요일 또는 공휴일이면 true
+// 날짜가 토요일/일요일/공휴일이면 true
 function isNonBizDay(ds){
   const d = parseDateLocal(ds);
   const dow = d.getDay(); // 0=일, 6=토
+  if(dow === 0) return true;          // 일요일
   if(dow === 6) return true;          // 토요일
   if(KR_HOLIDAYS.has(ds)) return true; // 공휴일
   return false;
@@ -1659,6 +1660,9 @@ function init(){
 
   // 1년 이전 데이터 자동 정리
   purgeOldData();
+
+  // eom/eom_next 발주의 dueDate 재계산 (토/일/공휴일 조정 코드 적용)
+  migrateDueDates();
 
   // Firebase 자동 동기화 + 일 1회 자동 백업 + 비밀번호 자동동기화
   const fb=window._fb;
@@ -3577,6 +3581,33 @@ function purgeOldData(){
     saveLS();
   }
   return deleted;
+}
+
+/* eom/eom_next 발주의 dueDate를 최신 영업일 로직으로 재계산
+   - 기존에 저장된 데이터가 수정 전 코드로 계산된 경우 자동 보정
+   - 완료(done)된 발주는 originalDueDate만 보정, dueDate는 실제 수금일이므로 유지 */
+function migrateDueDates(){
+  let changed = 0;
+  orders.forEach(o => {
+    const d = dealers.find(x => x.id === o.dealerId);
+    if(!d) return;
+    const term = d.term || o.term;
+    if(!term || !['eom','eom_next'].includes(term)) return;
+    // originalDueDate: 수금조건 기준 원래 예정일 (재계산 대상)
+    const recalc = calcDue(o.orderDate, term, o.dealerId);
+    // originalDueDate가 있으면 그것을 보정, 없으면 dueDate 보정
+    if(o.originalDueDate && o.originalDueDate !== recalc){
+      o.originalDueDate = recalc;
+      changed++;
+    } else if(!o.originalDueDate && o.status !== 'done' && o.dueDate !== recalc){
+      o.dueDate = recalc;
+      changed++;
+    }
+  });
+  if(changed > 0){
+    console.log(`[dueDate 재계산] ${changed}건 수금예정일 업데이트 (토/일/공휴일 조정)`);
+    saveLS();
+  }
 }
 
 async function fbSaveAll(){
