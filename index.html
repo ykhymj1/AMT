@@ -1236,13 +1236,23 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
     <hr class="divider">
     <div class="setting-section">
       <h3>🔐 비밀번호 동기화</h3>
-      <p style="font-size:.78rem;color:var(--text2);margin-bottom:12px">구글 계정 없이 비밀번호만으로 다른 기기와 데이터를 공유합니다.<br>같은 비밀번호를 입력한 기기끼리만 데이터가 동기화됩니다.</p>
+      <p style="font-size:.78rem;color:var(--text2);margin-bottom:12px">
+        구글 계정 없이 비밀번호만으로 다른 기기와 자동 동기화됩니다.<br>
+        <b>비밀번호를 한 번 저장하면</b> 이후 앱 시작 시 자동으로 동기화됩니다.
+      </p>
+      <div id="pwSavedBanner" style="display:none;background:#dcfce7;border:1px solid #86efac;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:.82rem;display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span>✅ 비밀번호 저장됨 — 앱 시작 시 자동 동기화 활성화</span>
+        <button class="btn btn-ghost btn-xs" onclick="clearSyncPassword()" style="margin-left:auto">🗑️ 비밀번호 삭제</button>
+      </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
         <div class="form-group" style="margin:0;flex:1;min-width:180px">
           <label>동기화 비밀번호</label>
           <input type="password" id="syncPassword" placeholder="영문+숫자 조합 권장" style="font-size:.9rem">
         </div>
-        <button class="btn btn-primary btn-sm" onclick="syncWithPassword()">📤 이 기기 데이터 올리기</button>
+        <button class="btn btn-primary btn-sm" onclick="saveSyncPassword()">💾 비밀번호 저장 + 자동동기화 ON</button>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button class="btn btn-outline btn-sm" onclick="syncWithPassword()">📤 이 기기 데이터 올리기</button>
         <button class="btn btn-outline btn-sm" onclick="loadWithPassword()">📥 다른 기기 데이터 가져오기</button>
       </div>
       <p id="pwSyncMsg" style="font-size:.78rem;color:var(--text2);margin-top:8px"></p>
@@ -1379,6 +1389,7 @@ const LS_AUDIT   = 'amt2_audit';
 const LS_TX      = 'amt2_tx';
 const LS_BEST    = 'amt2_best';
 const LS_KY_RET  = 'amt2_ky_ret';
+const LS_SYNC_PW = 'amt2_sync_pw'; // 동기화 비밀번호 (로컬 저장)
 
 function loadLS(){
   try{
@@ -1599,11 +1610,13 @@ function init(){
   // 1년 이전 데이터 자동 정리
   purgeOldData();
 
-  // Firebase 자동 동기화 + 일 1회 자동 백업
+  // Firebase 자동 동기화 + 일 1회 자동 백업 + 비밀번호 자동동기화
   const fb=window._fb;
   if(fb&&fb.ready){
-    fbSync().then(()=>{ fbStartListener(); fbBackupToday(); });
+    fbSync().then(()=>{ fbStartListener(); fbBackupToday(); autoSyncWithSavedPassword(); });
   }
+  // 저장된 비밀번호 입력칸에 채우기 + 배너 표시
+  loadSyncPasswordUI();
 
   refreshAll();
 }
@@ -3952,6 +3965,101 @@ function recTab(name,btn){
 /* ═══════════════════════════════════════════════════════
    비밀번호 동기화
 ═══════════════════════════════════════════════════════ */
+
+// 저장된 비밀번호 UI 반영 (입력칸 채우기 + 배너 표시)
+function loadSyncPasswordUI(){
+  const saved = localStorage.getItem(LS_SYNC_PW)||'';
+  const banner = document.getElementById('pwSavedBanner');
+  const input  = document.getElementById('syncPassword');
+  if(saved){
+    if(banner) banner.style.display='flex';
+    if(input)  input.value = saved;
+  } else {
+    if(banner) banner.style.display='none';
+  }
+}
+
+// 비밀번호 저장 + 자동동기화 ON
+async function saveSyncPassword(){
+  const pw = document.getElementById('syncPassword').value.trim();
+  if(!pw){ toast('비밀번호를 입력하세요','error'); return; }
+  localStorage.setItem(LS_SYNC_PW, pw);
+  loadSyncPasswordUI();
+  toast('✅ 비밀번호 저장 완료! 앱 시작 시 자동 동기화됩니다.','success');
+  const msg = document.getElementById('pwSyncMsg');
+  msg.textContent = '✅ 비밀번호가 저장되었습니다. 앱을 열 때마다 자동으로 동기화됩니다.';
+  msg.style.color = 'var(--green)';
+  // 저장 즉시 한 번 동기화 실행
+  await autoSyncWithSavedPassword();
+}
+
+// 비밀번호 삭제
+function clearSyncPassword(){
+  if(!confirm('저장된 비밀번호를 삭제하시겠습니까?\n자동 동기화가 비활성화됩니다.')) return;
+  localStorage.removeItem(LS_SYNC_PW);
+  document.getElementById('syncPassword').value='';
+  loadSyncPasswordUI();
+  const msg = document.getElementById('pwSyncMsg');
+  msg.textContent = '비밀번호가 삭제되었습니다.';
+  msg.style.color = 'var(--text2)';
+  toast('비밀번호 삭제됨 — 자동동기화 비활성화','info');
+}
+
+// 앱 시작 시 저장된 비밀번호로 자동 동기화
+async function autoSyncWithSavedPassword(){
+  const pw = localStorage.getItem(LS_SYNC_PW)||'';
+  if(!pw) return; // 저장된 비밀번호 없으면 스킵
+  const fb = window._fb;
+  if(!fb||!fb.ready) return;
+  try{
+    const key = await hashPassword(pw);
+    const snap = await fb.get(fb.ref(fb.db,'amt_pw/'+key));
+    if(!snap.exists()){
+      // 서버에 데이터 없음 → 이 기기 데이터 업로드
+      await uploadWithKey(key);
+      return;
+    }
+    const remote = snap.val();
+    const remoteTime = remote._updatedAt||'';
+    const localTime  = localStorage.getItem('amt_updatedAt')||'';
+    if(remoteTime > localTime){
+      // 서버가 더 최신 → 가져오기
+      _applyPwRemote(remote);
+      refreshAll();
+      const t = new Date(remoteTime).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+      toast('📱 비밀번호 동기화: 최신 데이터 적용 ('+t+')','info');
+    } else {
+      // 로컬이 최신 또는 동일 → 업로드
+      await uploadWithKey(key);
+    }
+  }catch(e){ console.warn('비밀번호 자동동기화 실패:',e); }
+}
+
+// 비밀번호 키로 서버에 업로드
+async function uploadWithKey(key){
+  const fb = window._fb;
+  if(!fb||!fb.ready) return;
+  const now = new Date().toISOString();
+  const payload={ orders, invLogs, dealers, products, internalTrades, auditLogs, txLogs, bestReturns, kyReturns, _updatedAt:now };
+  await fb.set(fb.ref(fb.db,'amt_pw/'+key), payload);
+}
+
+// 원격 데이터 로컬에 적용 (비밀번호 동기화용)
+function _applyPwRemote(remote){
+  if(remote.orders) orders=remote.orders;
+  if(remote.invLogs){ invLogs=remote.invLogs; invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; }); }
+  if(remote.dealers) dealers=remote.dealers;
+  if(remote.products) products=remote.products;
+  if(remote.internalTrades) internalTrades=remote.internalTrades;
+  if(remote.kyReturns) kyReturns=remote.kyReturns;
+  if(remote.auditLogs) auditLogs=remote.auditLogs;
+  if(remote.txLogs) txLogs=remote.txLogs;
+  if(remote.bestReturns) bestReturns=remote.bestReturns;
+  const now=remote._updatedAt||new Date().toISOString();
+  localStorage.setItem('amt_updatedAt', now);
+  saveLS();
+}
+
 // 비밀번호를 해시해서 Firebase 노드 키로 사용
 async function hashPassword(pw){
   const buf=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
@@ -3964,7 +4072,7 @@ async function syncWithPassword(){
   const fb=window._fb;
   if(!fb||!fb.ready){
     const msg=document.getElementById('pwSyncMsg');
-    msg.textContent='❌ Firebase 미연결입니다. 설정 탭에서 Firebase 정보를 저장하고 새로고침 해주세요.';
+    msg.textContent='❌ Firebase 미연결입니다.';
     msg.style.color='var(--red)';
     toast('Firebase 미연결 — 설정탭 확인!','error');
     return;
@@ -3973,10 +4081,8 @@ async function syncWithPassword(){
   msg.textContent='업로드 중...';
   try{
     const key=await hashPassword(pw);
-    const now=new Date().toISOString();
-    const payload={ orders, invLogs, dealers, products, internalTrades, auditLogs, txLogs, bestReturns, kyReturns, _updatedAt:now };
-    await fb.set(fb.ref(fb.db,'amt_pw/'+key), payload);
-    msg.textContent='✅ 업로드 완료! ('+new Date().toLocaleTimeString('ko-KR')+') — 다른 기기에서 같은 비밀번호로 가져오기 하세요.';
+    await uploadWithKey(key);
+    msg.textContent='✅ 업로드 완료! ('+new Date().toLocaleTimeString('ko-KR')+')';
     msg.style.color='var(--green)';
   }catch(e){ msg.textContent='❌ 실패: '+e.message; msg.style.color='var(--red)'; }
 }
