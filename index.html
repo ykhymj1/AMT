@@ -3491,34 +3491,18 @@ async function saveBestReturn(){
   const entry={id,date,fromType,product,price,qty,total,memo,createdAt:new Date().toISOString()};
   bestReturns.push(entry);
 
-  // ★ 재고 반영: 반품 방향에 따라 invLogs에 출고/입고 기록
-  const ts=new Date().toISOString();
-  if(fromType==='KY_to_AMT'){
-    // KY가 AMT에 반품 → KY 출고, AMT 입고
-    invLogs.push({id:'inv_'+Date.now()+'_kyr', date, product, qty:-qty, type:'out',
-      company:'KY', memo:`KY반품→AMT${memo?' ('+memo+')':''}`, relBest:id, createdAt:ts});
-    invLogs.push({id:'inv_'+(Date.now()+1)+'_amtr', date, product, qty:qty, type:'in',
-      company:'AMT', memo:`AMT반품수령←KY${memo?' ('+memo+')':''}`, relBest:id, createdAt:ts});
-  } else if(fromType==='AMT_to_BEST'){
-    // AMT가 BEST에 반품 → AMT 출고 (BEST는 재고관리 없음)
-    invLogs.push({id:'inv_'+Date.now()+'_amtb', date, product, qty:-qty, type:'out',
-      company:'AMT', memo:`AMT반품→BEST${memo?' ('+memo+')':''}`, relBest:id, createdAt:ts});
-  } else if(fromType==='KY_to_BEST'){
-    // KY가 BEST에 반품 → KY 출고 (BEST는 재고관리 없음)
-    invLogs.push({id:'inv_'+Date.now()+'_kyb', date, product, qty:-qty, type:'out',
-      company:'KY', memo:`KY반품→BEST${memo?' ('+memo+')':''}`, relBest:id, createdAt:ts});
-  }
+  // ※ 반품제품은 현재 판매중인 제품이 아니므로 재고에 반영하지 않음
+  //   채권채무만 반영됨
 
   addAuditLog('create','채권채무',`${fromLabel[fromType]||fromType} 반품 ${product} ${fmt(qty)}개 ${fmt(total)}원 (${date})`);
   saveLS(); await fbSaveAll();
-  toast('반품 저장 완료! (재고 자동 반영)','success');
+  toast('반품 저장 완료! (채권채무에 반영됨)','success');
   document.getElementById('bestProduct').value='';
   document.getElementById('bestPrice').value='';
   document.getElementById('bestQty').value='';
   document.getElementById('bestTotal').value='';
   document.getElementById('bestMemo').value='';
   renderDebtSummary(); renderBestReturnList();
-  renderInvCards(); renderInvHistory(); // ★ 재고 화면도 갱신
 }
 
 function renderBestReturnList(){
@@ -3568,12 +3552,10 @@ async function deleteBestReturn(id){
     addAuditLog('delete','채권채무',`반품삭제: ${ftLabel[ft]||ft} ${r.product} ${fmt(r.qty)}개 ${fmt(r.total)}원`,r);
   }
   bestReturns=bestReturns.filter(x=>x.id!==id);
-  // ★ 연관 재고 로그도 함께 삭제
-  invLogs=invLogs.filter(i=>i.relBest!==id);
+  // ※ 반품제품은 재고에 반영하지 않으므로 invLogs 정리 불필요
   saveLS(); await fbSaveAll();
   toast('삭제 완료','info');
   renderDebtSummary(); renderBestReturnList();
-  renderInvCards(); renderInvHistory(); // ★ 재고 화면도 갱신
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -3638,27 +3620,12 @@ async function saveReturnEdit(){
   // bestReturns 업데이트
   r.date=newDate; r.product=newProduct; r.price=newPrice; r.qty=newQty; r.total=newTotal; r.memo=newMemo;
 
-  // 연관 재고 로그 재생성 (기존 삭제 후 새로 추가)
-  invLogs = invLogs.filter(i=>i.relBest!==_editReturnId);
-  const ts = new Date().toISOString();
-  if(ft==='KY_to_AMT'){
-    invLogs.push({id:'inv_'+Date.now()+'_kyr', date:newDate, product:newProduct, qty:-newQty, type:'out',
-      company:'KY', memo:`KY반품→AMT (수정)`, relBest:_editReturnId, createdAt:ts});
-    invLogs.push({id:'inv_'+(Date.now()+1)+'_amtr', date:newDate, product:newProduct, qty:newQty, type:'in',
-      company:'AMT', memo:`AMT반품수령←KY (수정)`, relBest:_editReturnId, createdAt:ts});
-  } else if(ft==='AMT_to_BEST'){
-    invLogs.push({id:'inv_'+Date.now()+'_amtb', date:newDate, product:newProduct, qty:-newQty, type:'out',
-      company:'AMT', memo:`AMT반품→BEST (수정)`, relBest:_editReturnId, createdAt:ts});
-  } else if(ft==='KY_to_BEST'){
-    invLogs.push({id:'inv_'+Date.now()+'_kyb', date:newDate, product:newProduct, qty:-newQty, type:'out',
-      company:'KY', memo:`KY반품→BEST (수정)`, relBest:_editReturnId, createdAt:ts});
-  }
+  // ※ 반품제품은 재고에 반영하지 않으므로 invLogs 수정 불필요
 
   saveLS(); await fbSaveAll();
   closeReturnEdit();
   toast('반품 수정 완료!','success');
   renderDebtSummary(); renderBestReturnList();
-  renderInvCards(); renderInvHistory();
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -4940,15 +4907,48 @@ function renderDebtDetail(){
     });
   }
 
-  // bestReturns
+  // bestReturns - 반품방향별 채권채무 반영
+  // KY_to_AMT : KY→AMT 반품 → AMT 채권 감소 (AMT↔KY 그룹)
+  // AMT_to_BEST: AMT→BEST 반품 → AMT 채권 증가 (AMT↔BEST 그룹)
+  // KY_to_BEST : KY→BEST 반품 → KY 채권 증가 (KY↔BEST 그룹)
   bestReturns.forEach(function(r){
-    const fromCo=(r.fromType==='AMT_to_BEST'||r.from==='AMT')?'AMT':(r.fromType==='KY_to_BEST'||r.from==='KY')?'KY':null;
-    if(!fromCo) return;
-    const pA=(fromCo==='AMT')?'AMT':'KY', pB='BEST';
-    if(!((pA===a&&pB===b)||(pA===b&&pB===a))) return;
-    let effect=(fromCo===a)?r.total:-r.total;
-    if(owner!==a) effect=-effect;
-    allItems.push({date:r.date,label:'반품('+fromCo+'→BEST) '+r.product,amount:r.total,effect:effect,memo:r.memo||'',src:'반품'});
+    const ft = r.fromType || (r.from==='AMT' ? 'AMT_to_BEST' : r.from==='KY' ? 'KY_to_BEST' : '');
+    if(!ft) return;
+
+    let pA, pB, effect=0;
+
+    if(ft==='KY_to_AMT'){
+      // KY가 AMT에 물건 반납 → AMT 채권 감소
+      pA='AMT'; pB='KY';
+      if(!((pA===a&&pB===b)||(pA===b&&pB===a))) return;
+      // compA=AMT 기준: balance -= r.total
+      effect = (a==='AMT') ? -r.total : r.total;
+      if(owner!==a) effect=-effect;
+    } else if(ft==='AMT_to_BEST'){
+      // AMT→BEST 반품: BEST가 AMT에 돈 줘야함 → AMT 채권 증가
+      pA='AMT'; pB='BEST';
+      if(!((pA===a&&pB===b)||(pA===b&&pB===a))) return;
+      effect = (a==='AMT') ? r.total : -r.total;
+      if(owner!==a) effect=-effect;
+    } else if(ft==='KY_to_BEST'){
+      // KY→BEST 반품: BEST가 KY에 돈 줘야함 → KY 채권 증가
+      pA='KY'; pB='BEST';
+      if(!((pA===a&&pB===b)||(pA===b&&pB===a))) return;
+      effect = (a==='KY') ? r.total : -r.total;
+      if(owner!==a) effect=-effect;
+    } else {
+      return;
+    }
+
+    const ftLabel={'KY_to_AMT':'KY→AMT 반품','AMT_to_BEST':'AMT→BEST 반품','KY_to_BEST':'KY→BEST 반품'};
+    allItems.push({
+      date:r.date,
+      label:ftLabel[ft]||ft,
+      amount:r.total,
+      effect:effect,
+      memo:(r.product||'')+(r.memo?' · '+r.memo:''),
+      src:'반품'
+    });
   });
 
   allItems.sort(function(x,y){ return x.date.localeCompare(y.date)||(x.date===y.date?0:0); });
