@@ -4660,8 +4660,13 @@ function renderDebtDetail(){
   });
 
   // internalTrades (AMT↔KY만)
+  // ※ saveKySupply는 txLogs(AMT_to_KY)에도 relInternal로 연결 저장함
+  //   → txLogs에 이미 포함된 건은 중복 방지를 위해 건너뜀
+  //   → txLogs에 없는 구버전 saveInternal 데이터는 여기서 표시
   if((a==='AMT'&&b==='KY')||(a==='KY'&&b==='AMT')){
+    const txRelIds=new Set(txLogs.filter(t=>t.relInternal).map(t=>t.relInternal));
     internalTrades.forEach(function(t){
+      if(txRelIds.has(t.id)) return; // txLogs에 이미 있음 → 중복 건너뜀
       let effect=(a==='AMT')?t.total:-t.total;
       if(owner!==a) effect=-effect;
       allItems.push({date:t.date,label:'AMT→KY 물품공급('+t.product+' '+fmt(t.qty)+'개)',amount:t.total,effect:effect,memo:t.memo||'',src:'물품'});
