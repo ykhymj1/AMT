@@ -1378,6 +1378,94 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
 <div class="toast-wrap" id="toastWrap"></div>
 
 <!-- 채권채무 내역 모달 -->
+<!-- ═══ 발주 수정 모달 ═══ -->
+<div id="orderEditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9997;align-items:center;justify-content:center;padding:16px;box-sizing:border-box">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:500px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.2);padding:24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+      <div style="font-size:1rem;font-weight:800">✏️ 발주 수정</div>
+      <button onclick="closeOrderEdit()" style="border:none;background:var(--gray-light);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:.85rem">✕ 닫기</button>
+    </div>
+    <div id="orderEditInfo" style="font-size:.8rem;background:var(--surface2);border-radius:8px;padding:10px 14px;margin-bottom:16px;color:var(--text2)"></div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>발주일 <span class="req">*</span></label>
+        <input type="date" id="oeDate">
+      </div>
+      <div class="form-group">
+        <label>수량 <span class="req">*</span></label>
+        <input type="number" id="oeQty" min="1" placeholder="0" oninput="oeCalc()">
+      </div>
+      <div class="form-group">
+        <label>단가 (VAT포함) <span class="req">*</span></label>
+        <input type="text" inputmode="numeric" id="oePrice" placeholder="0" oninput="fmtInput(this);oeCalc()">
+      </div>
+      <div class="form-group">
+        <label>합계금액</label>
+        <input type="text" id="oeTotal" readonly style="background:var(--gray-light);font-weight:700;color:var(--blue)">
+      </div>
+      <div class="form-group">
+        <label>수금예정일 <span style="font-size:.68rem;color:var(--text3)">(자동계산, 직접 수정 가능)</span></label>
+        <input type="date" id="oeDue">
+      </div>
+      <div class="form-group">
+        <label>메모</label>
+        <input type="text" id="oeMemo" placeholder="선택사항">
+      </div>
+    </div>
+    <div style="background:var(--yellow-light);border-radius:8px;padding:10px 14px;font-size:.78rem;color:var(--yellow);margin-bottom:16px">
+      ⚠️ 수정 시 <b>KY 재고 출고 수량이 자동 재계산</b>됩니다.
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeOrderEdit()">취소</button>
+      <button class="btn btn-primary" onclick="saveOrderEdit()">💾 수정 저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 반품 수정 모달 ═══ -->
+<div id="returnEditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9996;align-items:center;justify-content:center;padding:16px;box-sizing:border-box">
+  <div style="background:#fff;border-radius:14px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.2);padding:24px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+      <div style="font-size:1rem;font-weight:800">✏️ 반품 수정</div>
+      <button onclick="closeReturnEdit()" style="border:none;background:var(--gray-light);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:.85rem">✕ 닫기</button>
+    </div>
+    <div id="returnEditTypeLabel" style="font-size:.82rem;font-weight:700;padding:8px 12px;border-radius:8px;margin-bottom:16px;background:var(--surface2)"></div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>날짜 <span class="req">*</span></label>
+        <input type="date" id="reDate">
+      </div>
+      <div class="form-group">
+        <label>제품명 <span class="req">*</span></label>
+        <input type="text" id="reProduct" placeholder="제품명">
+      </div>
+      <div class="form-group">
+        <label>단가 <span class="req">*</span></label>
+        <input type="text" inputmode="numeric" id="rePrice" placeholder="0" oninput="fmtInput(this);reCalc()">
+      </div>
+      <div class="form-group">
+        <label>수량 <span class="req">*</span></label>
+        <input type="text" inputmode="numeric" id="reQty" placeholder="0" oninput="fmtInput(this);reCalc()">
+      </div>
+      <div class="form-group">
+        <label>총금액 (자동)</label>
+        <input type="text" id="reTotal" readonly style="background:var(--gray-light);font-weight:700;color:var(--best)">
+      </div>
+      <div class="form-group">
+        <label>메모</label>
+        <input type="text" id="reMemo" placeholder="선택사항">
+      </div>
+    </div>
+    <div style="background:var(--yellow-light);border-radius:8px;padding:10px 14px;font-size:.78rem;color:var(--yellow);margin-bottom:16px">
+      ⚠️ 수정 시 <b>연관 재고가 자동 재계산</b>됩니다.
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end">
+      <button class="btn btn-ghost" onclick="closeReturnEdit()">취소</button>
+      <button class="btn btn-primary" style="background:var(--best);border-color:var(--best)" onclick="saveReturnEdit()">💾 수정 저장</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ 거래 수정 모달 ═══ -->
 <div id="txEditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9998;align-items:center;justify-content:center;padding:16px;box-sizing:border-box">
   <div style="background:#fff;border-radius:14px;width:100%;max-width:480px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 40px rgba(0,0,0,.2);padding:24px">
@@ -2092,7 +2180,7 @@ function renderOrderTableHtml(list, compact=false){
         <td>${statusBadge(o)}</td>
         ${!compact?`<td class="td-c">
           <div style="display:flex;gap:4px;justify-content:center;flex-wrap:wrap">
-            <button class="btn btn-ghost btn-xs" onclick="editOrderNote('${o.id}')">메모</button>
+            <button class="btn btn-outline btn-xs" onclick="openEditOrder('${o.id}')">✏️ 수정</button>
             <button class="btn btn-danger btn-xs" onclick="delOrder('${o.id}')">✕</button>
           </div>
         </td>`:''}
@@ -2213,6 +2301,97 @@ async function delOrder(id){
   saveLS();
   await fbDelDoc('orders',id);
   toast('삭제 완료','info');
+  refreshAll();
+}
+
+/* ═══════════════════════════════════════════════════════
+   발주 수정 (openEditOrder / saveOrderEdit / closeOrderEdit)
+═══════════════════════════════════════════════════════ */
+let _editOrderId = null;
+
+function openEditOrder(id){
+  const o = orders.find(x=>x.id===id);
+  if(!o){ toast('발주를 찾을 수 없습니다','error'); return; }
+  _editOrderId = id;
+
+  document.getElementById('orderEditInfo').innerHTML =
+    `<b>${o.dealerName}</b> · <span style="color:var(--blue);font-weight:700">${o.product}</span> · 현재: ${fmt(o.qty)}개 × ${fmt(o.price)}원 = <b>${fmt(o.total)}원</b>`;
+
+  document.getElementById('oeDate').value = o.orderDate||'';
+  document.getElementById('oeQty').value = o.qty||0;
+  setInputFmt(document.getElementById('oePrice'), o.price||0);
+  setInputFmt(document.getElementById('oeTotal'), o.total||0);
+  document.getElementById('oeDue').value = o.dueDate||'';
+  document.getElementById('oeMemo').value = o.memo||'';
+
+  document.getElementById('orderEditModal').style.display='flex';
+  document.body.style.overflow='hidden';
+}
+
+function closeOrderEdit(){
+  document.getElementById('orderEditModal').style.display='none';
+  document.body.style.overflow='';
+  _editOrderId=null;
+}
+
+function oeCalc(){
+  const qty = parseInt(document.getElementById('oeQty').value)||0;
+  const price = parseInput(document.getElementById('oePrice'));
+  setInputFmt(document.getElementById('oeTotal'), qty*price);
+  // 수금예정일 자동 재계산
+  const date = document.getElementById('oeDate').value;
+  if(date && _editOrderId){
+    const o = orders.find(x=>x.id===_editOrderId);
+    if(o){
+      const dealer = getDealerById(o.dealerId);
+      if(dealer) document.getElementById('oeDue').value = calcDue(date, dealer.term, o.dealerId);
+    }
+  }
+}
+
+async function saveOrderEdit(){
+  if(!_editOrderId){ toast('수정할 발주가 없습니다','error'); return; }
+  const o = orders.find(x=>x.id===_editOrderId);
+  if(!o){ toast('발주를 찾을 수 없습니다','error'); return; }
+
+  const newDate = document.getElementById('oeDate').value;
+  const newQty  = parseInt(document.getElementById('oeQty').value)||0;
+  const newPrice= parseInput(document.getElementById('oePrice'));
+  const newDue  = document.getElementById('oeDue').value;
+  const newMemo = document.getElementById('oeMemo').value;
+
+  if(!newDate||newQty<=0||newPrice<=0){ toast('날짜·수량·단가를 입력하세요','error'); return; }
+
+  const newTotal = newQty * newPrice;
+  const oldQty = o.qty, oldDate = o.orderDate;
+
+  // 감사 로그
+  addAuditLog('edit','발주',
+    `수정: ${o.dealerName} ${o.product} ${fmt(oldQty)}개→${fmt(newQty)}개 ${fmt(o.total)}→${fmt(newTotal)}원 (${oldDate}→${newDate})`);
+
+  // order 업데이트
+  o.orderDate = newDate;
+  o.qty = newQty;
+  o.price = newPrice;
+  o.total = newTotal;
+  o.dueDate = newDue;
+  o.memo = newMemo;
+  if(o.fee) o.fee = o.fee; // 택배비 유지
+
+  // KY 재고 출고 로그 재계산 (relOrder로 연결된 invLog 수정)
+  const invIdx = invLogs.findIndex(i=>i.relOrder===_editOrderId);
+  if(invIdx>=0){
+    invLogs[invIdx].date = newDate;
+    invLogs[invIdx].product = o.product;
+    invLogs[invIdx].qty = -newQty; // 출고는 음수
+    invLogs[invIdx].memo = `발주출고-${o.dealerName}`;
+  }
+
+  saveLS();
+  await fbSaveDoc('orders', _editOrderId, o);
+  await fbSaveAll();
+  closeOrderEdit();
+  toast('발주 수정 완료!','success');
   refreshAll();
 }
 
@@ -3356,7 +3535,7 @@ function renderBestReturnList(){
       <span>합계 <b>${fmt(total)}원</b></span>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>날짜</th><th>반품방향</th><th>제품명</th><th class="td-r">단가</th><th class="td-r">수량</th><th class="td-r">총금액</th><th>메모</th><th class="td-c">삭제</th></tr></thead>
+      <thead><tr><th>날짜</th><th>반품방향</th><th>제품명</th><th class="td-r">단가</th><th class="td-r">수량</th><th class="td-r">총금액</th><th>메모</th><th class="td-c">액션</th></tr></thead>
       <tbody>
       ${list.map(r=>{
         const ft=r.fromType||(r.from==='AMT'?'AMT_to_BEST':r.from==='KY'?'KY_to_BEST':'');
@@ -3370,7 +3549,10 @@ function renderBestReturnList(){
           <td class="td-mono td-r">${fmt(r.qty)}</td>
           <td class="td-mono td-r tx-in">${fmt(r.total)}원</td>
           <td style="font-size:.75rem;color:var(--text2)">${r.memo||''}</td>
-          <td class="td-c"><button class="btn btn-danger btn-xs" onclick="deleteBestReturn('${r.id}')">✕</button></td>
+          <td class="td-c" style="white-space:nowrap">
+            <button class="btn btn-outline btn-xs" onclick="openEditReturn('${r.id}')" style="margin-bottom:2px">✏️</button>
+            <button class="btn btn-danger btn-xs" onclick="deleteBestReturn('${r.id}')">✕</button>
+          </td>
         </tr>`;
       }).join('')}
       </tbody>
@@ -3392,6 +3574,91 @@ async function deleteBestReturn(id){
   toast('삭제 완료','info');
   renderDebtSummary(); renderBestReturnList();
   renderInvCards(); renderInvHistory(); // ★ 재고 화면도 갱신
+}
+
+/* ═══════════════════════════════════════════════════════
+   반품 수정 (openEditReturn / saveReturnEdit / closeReturnEdit)
+═══════════════════════════════════════════════════════ */
+let _editReturnId = null;
+
+function openEditReturn(id){
+  const r = bestReturns.find(x=>x.id===id);
+  if(!r){ toast('반품 이력을 찾을 수 없습니다','error'); return; }
+  _editReturnId = id;
+
+  const ft = r.fromType||(r.from==='AMT'?'AMT_to_BEST':r.from==='KY'?'KY_to_BEST':'');
+  const ftLabel = {'KY_to_AMT':'KY→AMT 반품','AMT_to_BEST':'AMT→BEST 반품','KY_to_BEST':'KY→BEST 반품'};
+  const ftColor = {'KY_to_AMT':'var(--ky)','AMT_to_BEST':'var(--amt)','KY_to_BEST':'var(--ky)'};
+  document.getElementById('returnEditTypeLabel').innerHTML =
+    `<span style="color:${ftColor[ft]||'var(--best)'};font-weight:700">${ftLabel[ft]||ft||'반품'}</span>`;
+
+  document.getElementById('reDate').value = r.date||'';
+  document.getElementById('reProduct').value = r.product||'';
+  setInputFmt(document.getElementById('rePrice'), r.price||0);
+  setInputFmt(document.getElementById('reQty'), r.qty||0);
+  setInputFmt(document.getElementById('reTotal'), r.total||0);
+  document.getElementById('reMemo').value = r.memo||'';
+
+  document.getElementById('returnEditModal').style.display='flex';
+  document.body.style.overflow='hidden';
+}
+
+function closeReturnEdit(){
+  document.getElementById('returnEditModal').style.display='none';
+  document.body.style.overflow='';
+  _editReturnId=null;
+}
+
+function reCalc(){
+  const p = parseInput(document.getElementById('rePrice'));
+  const q = parseInput(document.getElementById('reQty'));
+  setInputFmt(document.getElementById('reTotal'), p*q);
+}
+
+async function saveReturnEdit(){
+  if(!_editReturnId){ toast('수정할 반품이 없습니다','error'); return; }
+  const r = bestReturns.find(x=>x.id===_editReturnId);
+  if(!r){ toast('반품 이력을 찾을 수 없습니다','error'); return; }
+
+  const newDate    = document.getElementById('reDate').value;
+  const newProduct = document.getElementById('reProduct').value.trim();
+  const newPrice   = parseInput(document.getElementById('rePrice'));
+  const newQty     = parseInput(document.getElementById('reQty'));
+  const newMemo    = document.getElementById('reMemo').value;
+  const newTotal   = newPrice * newQty;
+
+  if(!newDate||!newProduct||newQty<=0||newPrice<=0){ toast('날짜·제품명·단가·수량을 입력하세요','error'); return; }
+
+  const ft = r.fromType||(r.from==='AMT'?'AMT_to_BEST':r.from==='KY'?'KY_to_BEST':'');
+  const ftLabel = {'KY_to_AMT':'KY→AMT','AMT_to_BEST':'AMT→BEST','KY_to_BEST':'KY→BEST'};
+
+  addAuditLog('edit','채권채무',
+    `반품수정: ${ftLabel[ft]||ft} ${r.product} ${fmt(r.qty)}개→${fmt(newQty)}개 ${fmt(r.total)}→${fmt(newTotal)}원 (${r.date}→${newDate})`);
+
+  // bestReturns 업데이트
+  r.date=newDate; r.product=newProduct; r.price=newPrice; r.qty=newQty; r.total=newTotal; r.memo=newMemo;
+
+  // 연관 재고 로그 재생성 (기존 삭제 후 새로 추가)
+  invLogs = invLogs.filter(i=>i.relBest!==_editReturnId);
+  const ts = new Date().toISOString();
+  if(ft==='KY_to_AMT'){
+    invLogs.push({id:'inv_'+Date.now()+'_kyr', date:newDate, product:newProduct, qty:-newQty, type:'out',
+      company:'KY', memo:`KY반품→AMT (수정)`, relBest:_editReturnId, createdAt:ts});
+    invLogs.push({id:'inv_'+(Date.now()+1)+'_amtr', date:newDate, product:newProduct, qty:newQty, type:'in',
+      company:'AMT', memo:`AMT반품수령←KY (수정)`, relBest:_editReturnId, createdAt:ts});
+  } else if(ft==='AMT_to_BEST'){
+    invLogs.push({id:'inv_'+Date.now()+'_amtb', date:newDate, product:newProduct, qty:-newQty, type:'out',
+      company:'AMT', memo:`AMT반품→BEST (수정)`, relBest:_editReturnId, createdAt:ts});
+  } else if(ft==='KY_to_BEST'){
+    invLogs.push({id:'inv_'+Date.now()+'_kyb', date:newDate, product:newProduct, qty:-newQty, type:'out',
+      company:'KY', memo:`KY반품→BEST (수정)`, relBest:_editReturnId, createdAt:ts});
+  }
+
+  saveLS(); await fbSaveAll();
+  closeReturnEdit();
+  toast('반품 수정 완료!','success');
+  renderDebtSummary(); renderBestReturnList();
+  renderInvCards(); renderInvHistory();
 }
 
 /* ═══════════════════════════════════════════════════════
