@@ -886,6 +886,38 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
       <div class="card-header">
         <div class="card-title"><div class="card-title-dot" style="background:var(--best)"></div>반품 이력</div>
       </div>
+      <!-- 필터 -->
+      <div class="filter-bar" style="flex-wrap:wrap;gap:8px">
+        <div class="filter-group">
+          <label>조회 방식</label>
+          <select id="bestReturnFilterMode" onchange="switchBestFilterMode()" style="min-width:80px">
+            <option value="month">월별</option>
+            <option value="all">전체</option>
+            <option value="range">기간</option>
+          </select>
+        </div>
+        <div class="filter-group" id="bestFilterMonthWrap">
+          <label>월</label>
+          <input type="month" id="bestReturnFilterMonth" onchange="renderBestReturnList()">
+        </div>
+        <div class="filter-group" id="bestFilterRangeWrap" style="display:none">
+          <label>시작일</label>
+          <input type="date" id="bestReturnFilterFrom" onchange="renderBestReturnList()">
+        </div>
+        <div class="filter-group" id="bestFilterRangeWrap2" style="display:none">
+          <label>종료일</label>
+          <input type="date" id="bestReturnFilterTo" onchange="renderBestReturnList()">
+        </div>
+        <div class="filter-group">
+          <label>반품방향</label>
+          <select id="bestReturnFilterDir" onchange="renderBestReturnList()">
+            <option value="">전체</option>
+            <option value="KY_to_AMT">KY→AMT</option>
+            <option value="AMT_to_BEST">AMT→BEST</option>
+            <option value="KY_to_BEST">KY→BEST</option>
+          </select>
+        </div>
+      </div>
       <div id="bestReturnList"></div>
     </div>
   </div>
@@ -1046,6 +1078,13 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
   <div class="company-tab-bar">
     <button class="company-tab active-amt" id="invTabAmt" onclick="switchInvCompany('AMT',this)">🏭 AMT 재고</button>
     <button class="company-tab" id="invTabKy" onclick="switchInvCompany('KY',this)">🏢 KY 재고</button>
+  </div>
+
+  <!-- 날짜별 재고 확인 -->
+  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;padding:12px 14px;background:#fff;border-radius:12px;box-shadow:0 1px 4px rgba(0,0,0,.08)">
+    <span style="font-size:.82rem;font-weight:700;color:var(--text2)">📅 날짜별 재고 조회</span>
+    <input type="date" id="invCheckDate" style="padding:6px 10px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.85rem;flex:1;min-width:140px">
+    <button onclick="openInvCheckModal()" style="padding:7px 16px;border-radius:8px;border:none;background:var(--blue);color:#fff;font-size:.82rem;font-weight:600;cursor:pointer;white-space:nowrap">🔍 재고 확인</button>
   </div>
 
   <div id="invCards"></div>
@@ -1521,6 +1560,28 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
   </div>
 </div>
 
+<!-- 날짜별 재고 확인 모달 -->
+<div id="invCheckModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow-y:auto;padding:16px;box-sizing:border-box">
+  <div style="background:#fff;border-radius:14px;max-width:680px;margin:0 auto;box-shadow:0 8px 40px rgba(0,0,0,.2)">
+    <div style="padding:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div id="invCheckTitle" style="font-size:1rem;font-weight:800;color:var(--text)"></div>
+        <button onclick="closeInvCheckModal()" style="border:none;background:#f1f5f9;border-radius:8px;padding:6px 12px;cursor:pointer;font-size:.85rem">✕ 닫기</button>
+      </div>
+      <!-- 날짜 변경 -->
+      <div style="display:flex;gap:8px;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap">
+        <div style="flex:1;min-width:140px">
+          <div style="font-size:.72rem;font-weight:600;color:#888;margin-bottom:4px">조회 날짜</div>
+          <input type="date" id="invCheckModalDate" style="width:100%;padding:8px 10px;border:1.5px solid #2563eb;border-radius:8px;font-size:.9rem;box-sizing:border-box" onchange="renderInvCheck()">
+        </div>
+        <button onclick="renderInvCheck()" style="padding:8px 16px;border-radius:8px;border:none;background:#2563eb;color:#fff;font-size:.82rem;font-weight:600;cursor:pointer">🔍 조회</button>
+        <button onclick="document.getElementById('invCheckModalDate').value=new Date().toISOString().slice(0,10);renderInvCheck()" style="padding:8px 14px;border-radius:8px;border:1px solid #d1d5db;background:#fff;font-size:.82rem;cursor:pointer">오늘</button>
+      </div>
+      <div id="invCheckBody"></div>
+    </div>
+  </div>
+</div>
+
 <div id="debtDetailModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9999;overflow-y:auto;padding:16px;box-sizing:border-box">
   <div style="background:#fff;border-radius:14px;max-width:700px;margin:0 auto;box-shadow:0 8px 40px rgba(0,0,0,.2)">
     <div style="padding:20px 20px 0">
@@ -1856,7 +1917,7 @@ function init(){
 
   // 필터 기본값
   const cm=curMonth;
-  ['ofMonth','rfMonth','invFilterM','itFilterM'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=cm; }); // txFilterM은 기본값 없음(전체 조회)
+  ['ofMonth','rfMonth','invFilterM','itFilterM','bestReturnFilterMonth'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=cm; }); // txFilterM은 기본값 없음(전체 조회)
 
   // 1년 이전 데이터 자동 정리
   purgeOldData();
@@ -3505,18 +3566,80 @@ async function saveBestReturn(){
   renderDebtSummary(); renderBestReturnList();
 }
 
+function switchBestFilterMode(){
+  const mode = (document.getElementById('bestReturnFilterMode')||{}).value||'month';
+  const mw = document.getElementById('bestFilterMonthWrap');
+  const rw = document.getElementById('bestFilterRangeWrap');
+  const rw2 = document.getElementById('bestFilterRangeWrap2');
+  if(mw)  mw.style.display  = mode==='month' ? '' : 'none';
+  if(rw)  rw.style.display  = mode==='range' ? '' : 'none';
+  if(rw2) rw2.style.display = mode==='range' ? '' : 'none';
+  renderBestReturnList();
+}
+
 function renderBestReturnList(){
-  const list=[...bestReturns].sort((a,b)=>b.date.localeCompare(a.date));
-  const el=document.getElementById('bestReturnList');
+  const modeEl  = document.getElementById('bestReturnFilterMode');
+  const dirEl   = document.getElementById('bestReturnFilterDir');
+  const moEl    = document.getElementById('bestReturnFilterMonth');
+  const fromEl  = document.getElementById('bestReturnFilterFrom');
+  const toEl    = document.getElementById('bestReturnFilterTo');
+
+  const mode  = modeEl  ? modeEl.value  : 'all';
+  const dirF  = dirEl   ? dirEl.value   : '';
+  const mo    = moEl    ? moEl.value    : '';
+  const from  = fromEl  ? fromEl.value  : '';
+  const to    = toEl    ? toEl.value    : '';
+
+  let list = [...bestReturns].sort((a,b)=>b.date.localeCompare(a.date));
+
+  // 기간 필터
+  if(mode==='month' && mo)  list = list.filter(r=>r.date.startsWith(mo));
+  if(mode==='range'){
+    if(from) list = list.filter(r=>r.date>=from);
+    if(to)   list = list.filter(r=>r.date<=to);
+  }
+  // 방향 필터
+  if(dirF) list = list.filter(r=>{
+    const ft=r.fromType||(r.from==='AMT'?'AMT_to_BEST':r.from==='KY'?'KY_to_BEST':'');
+    return ft===dirF;
+  });
+
+  const el = document.getElementById('bestReturnList');
   if(!el) return;
   if(!list.length){ el.innerHTML=emptyHtml('반품 이력이 없습니다'); return; }
-  const total=list.reduce((s,r)=>s+r.total,0);
-  const ftLabel={'KY_to_AMT':'KY→AMT','AMT_to_BEST':'AMT→BEST','KY_to_BEST':'KY→BEST'};
-  const ftColor={'KY_to_AMT':'var(--ky)','AMT_to_BEST':'var(--amt)','KY_to_BEST':'var(--ky)'};
+
+  const total   = list.reduce((s,r)=>s+r.total,0);
+  const totalQty= list.reduce((s,r)=>s+r.qty,0);
+  const ftLabel = {'KY_to_AMT':'KY→AMT','AMT_to_BEST':'AMT→BEST','KY_to_BEST':'KY→BEST'};
+  const ftColor = {'KY_to_AMT':'var(--ky)','AMT_to_BEST':'var(--amt)','KY_to_BEST':'var(--ky)'};
+
+  // 방향별 소계
+  const byDir = {};
+  list.forEach(r=>{
+    const ft=r.fromType||(r.from==='AMT'?'AMT_to_BEST':r.from==='KY'?'KY_to_BEST':'');
+    if(!byDir[ft]) byDir[ft]={cnt:0,total:0};
+    byDir[ft].cnt++; byDir[ft].total+=r.total;
+  });
+  const subHtml = Object.entries(byDir).map(([ft,v])=>{
+    const col=ftColor[ft]||'var(--best)';
+    return `<span style="display:inline-flex;align-items:center;gap:4px;background:#f8fafc;padding:4px 10px;border-radius:8px;font-size:.75rem">
+      <span style="color:${col};font-weight:700">${ftLabel[ft]||ft}</span>
+      <span style="color:var(--text2)">${v.cnt}건</span>
+      <span style="font-weight:700">${fmt(v.total)}원</span>
+    </span>`;
+  }).join('');
+
+  const periodLabel = mode==='month'&&mo ? mo+' 기준' : mode==='range'&&(from||to) ? (from||'~')+' ~ '+(to||'~') : '전체';
+
   el.innerHTML=`
-    <div style="padding:8px 12px;background:var(--surface2);border-radius:6px;margin-bottom:10px;font-size:.82rem;display:flex;gap:16px;flex-wrap:wrap">
-      <span>총 <b>${list.length}건</b></span>
-      <span>합계 <b>${fmt(total)}원</b></span>
+    <div style="background:var(--surface2);border-radius:8px;padding:10px 12px;margin-bottom:10px">
+      <div style="font-size:.78rem;color:var(--text2);margin-bottom:6px">${periodLabel}</div>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;font-size:.82rem;margin-bottom:8px">
+        <span>총 <b>${list.length}건</b></span>
+        <span>수량 <b>${fmt(totalQty)}개</b></span>
+        <span>합계 <b style="color:var(--best)">${fmt(total)}원</b></span>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${subHtml}</div>
     </div>
     <div class="table-wrap"><table>
       <thead><tr><th>날짜</th><th>반품방향</th><th>제품명</th><th class="td-r">단가</th><th class="td-r">수량</th><th class="td-r">총금액</th><th>메모</th><th class="td-c">액션</th></tr></thead>
@@ -5013,6 +5136,119 @@ function renderDebtDetail(){
         '</tr>';
     }).join('')+
     '</tbody></table></div>';
+}
+
+
+/* ═══════════════════════════════════════════════════════
+   날짜별 재고 조회
+═══════════════════════════════════════════════════════ */
+
+// 특정 날짜까지의 재고 계산 (해당 날짜 포함)
+// invLogs 기반 + 날짜 필터
+function calcStockAtDate(prod, company, dateStr){
+  let logs = invLogs.filter(i => i.product===prod && (i.company||'AMT')===company);
+  // 해당 날짜까지만 (날짜+createdAt 오름차순)
+  logs = logs.filter(i => i.date <= dateStr);
+  logs.sort((a,b) => a.date.localeCompare(b.date) || (a.createdAt||'').localeCompare(b.createdAt||''));
+  let total = 0;
+  logs.forEach(i => {
+    if(i.type==='adjust') total = i.qty;
+    else total += i.qty;
+  });
+  return total;
+}
+
+// 재고 확인 모달 열기
+function openInvCheckModal(){
+  const dateInput = document.getElementById('invCheckDate');
+  const date = dateInput.value || new Date().toISOString().slice(0,10);
+  document.getElementById('invCheckModalDate').value = date;
+  document.getElementById('invCheckModal').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+  renderInvCheck();
+}
+
+function closeInvCheckModal(){
+  document.getElementById('invCheckModal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function renderInvCheck(){
+  const date = document.getElementById('invCheckModalDate').value;
+  if(!date){ document.getElementById('invCheckBody').innerHTML='<p style="color:#888;text-align:center;padding:20px">날짜를 선택하세요</p>'; return; }
+
+  document.getElementById('invCheckTitle').textContent = date + ' 기준 재고 현황';
+
+  const pColors = {'JUC':'var(--juc)','MEDIAS':'var(--medias)','DELL':'var(--dell)'};
+  const companies = ['AMT','KY'];
+  const compColors = {'AMT':'var(--amt)','KY':'var(--ky)'};
+  const compBg = {'AMT':'var(--amt-bg)','KY':'var(--ky-bg)'};
+
+  // 제품별 × 회사별 재고 계산
+  let html = '';
+
+  // ─ 회사별 카드 그리드 ─
+  companies.forEach(co => {
+    const coColor = compColors[co];
+    const coBg = compBg[co];
+    html += `<div style="margin-bottom:18px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <span style="background:${coBg};color:${coColor};padding:3px 12px;border-radius:20px;font-size:.82rem;font-weight:800">${co}</span>
+        <span style="font-size:.78rem;color:#888">${co==='AMT'?'AMT 창고':'KY 창고'} 재고</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px">`;
+
+    products.forEach(prod => {
+      const qty = calcStockAtDate(prod, co, date);
+      const c = pColors[prod]||'var(--blue)';
+      const warn = qty < 0 ? '#dc2626' : qty < 10 ? '#d97706' : c;
+      html += `<div style="background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 4px rgba(0,0,0,.08);border-left:3px solid ${warn}">
+        <div style="font-size:.72rem;color:#888;margin-bottom:4px">${co}</div>
+        <div style="font-size:.9rem;font-weight:700;color:${c};margin-bottom:6px">${prod}</div>
+        <div style="font-size:1.5rem;font-weight:800;color:${warn};font-family:'JetBrains Mono',monospace">${fmt(qty)}</div>
+        <div style="font-size:.72rem;color:#888;margin-top:2px">개</div>
+      </div>`;
+    });
+
+    html += `</div></div>`;
+  });
+
+  // ─ 날짜까지의 거래 이력 ─
+  // 해당 날짜까지 invLogs 전체 (전체 회사)
+  let histLogs = [...invLogs]
+    .filter(i => i.date <= date)
+    .sort((a,b) => b.date.localeCompare(a.date) || (b.createdAt||'').localeCompare(a.createdAt||''))
+    .slice(0, 50); // 최근 50건
+
+  const pC = {'JUC':'var(--juc)','MEDIAS':'var(--medias)','DELL':'var(--dell)'};
+
+  html += `<div style="margin-top:8px">
+    <div style="font-size:.82rem;font-weight:700;color:var(--text2);margin-bottom:8px">
+      📋 ${date} 이전 최근 이력 (최대 50건)
+    </div>
+    <div class="table-wrap"><table>
+      <thead><tr><th>날짜</th><th>회사</th><th>제품</th><th>구분</th><th style="text-align:right">수량</th><th>메모</th></tr></thead>
+      <tbody>
+      ${histLogs.map(i => {
+        const co2 = i.company||'AMT';
+        const tc = i.type==='out'?'#dc2626':i.type==='adjust'?'#d97706':'#059669';
+        const pc2 = pC[i.product]||'var(--gray)';
+        const coColor2 = co2==='AMT'?'var(--amt)':'var(--ky)';
+        const coBg2 = co2==='AMT'?'var(--amt-bg)':'var(--ky-bg)';
+        return `<tr>
+          <td class="td-mono" style="white-space:nowrap">${i.date}</td>
+          <td><span style="background:${coBg2};color:${coColor2};padding:1px 6px;border-radius:8px;font-size:.68rem;font-weight:700">${co2}</span></td>
+          <td><span style="background:${pc2}20;color:${pc2};padding:1px 6px;border-radius:8px;font-size:.72rem;font-weight:700">${i.product}</span></td>
+          <td style="color:${tc};font-weight:600;font-size:.75rem">${i.type==='in'?'입고':i.type==='out'?'출고':'조정'}</td>
+          <td class="td-mono" style="text-align:right;font-weight:700;color:${i.qty<0?'#dc2626':'#059669'}">${i.qty>0?'+':''}${fmt(i.qty)}</td>
+          <td style="font-size:.72rem;color:#888">${i.memo||''}</td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table></div>
+  </div>`;
+
+  document.getElementById('invCheckBody').innerHTML = html;
 }
 
 function closeRecModal(){ document.getElementById('recModal').classList.remove('open'); }
