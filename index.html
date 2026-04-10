@@ -576,7 +576,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
     <div class="logo-text"><span>AMT</span> · KY 관리시스템</div>
   </div>
   <div class="header-right">
-    <span class="admin-name-chip" id="amtAdminBadge" onclick="amtAdminLogout()" title="클릭시 로그아웃">👤 ─</span>
+    <span class="admin-name-chip" id="amtAdminBadge" onclick="onAdminBadgeClick()" title="총관리자: 알림센터 / 일반관리자: 로그아웃">👤 ─</span>
     <button class="btn btn-ghost btn-sm" id="superAdminNotifBtn" onclick="openSuperAdminCenter()" style="display:none">🔔 알림센터</button>
     <div class="sync-badge">
       <div class="sync-dot off pulse" id="syncDot"></div>
@@ -2973,14 +2973,8 @@ async function saveInv(){
   const memo=document.getElementById('invMemo').value;
   const company=_curInvCompany;
   if(!date||!prod||qty===0){ toast('날짜·제품·수량을 입력하세요','error'); return; }
-  if(type==='adjust'){
-    // 재고조정은 OTP 필요
-    await requireOtp(`${company} 재고조정 (${prod} ${qty}개)`, async () => { await _doSaveInv(date,prod,type,qty,memo,company); });
-    return;
-  }
-  if(type==='out') qty=-Math.abs(qty);
-  else if(type==='in') qty=Math.abs(qty);
-  await _doSaveInv(date,prod,type,qty,memo,company);
+  const typeLabel = type==='adjust'?'재고조정':type==='in'?'입고':'출고';
+  await requireOtp(`${company} 재고 ${typeLabel} (${prod} ${qty}개)`, async () => { await _doSaveInv(date,prod,type,qty,memo,company); });
 }
 
 async function _doSaveInv(date,prod,type,qty,memo,company){
@@ -5990,10 +5984,13 @@ function showOtpModal(reqId, actionLabel, debugOtp){
         <b style="color:#2563eb">${actionLabel}</b> 작업은 총관리자 승인이 필요합니다.<br>
         총관리자(유경호)에게 OTP 코드를 받아 입력하세요.
       </div>
-      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:.78rem;color:#1e40af">
+      <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:12px;font-size:.78rem;color:#1e40af">
         📱 총관리자 앱에 OTP 알림이 발송되었습니다.<br>
         <span style="font-size:.72rem;color:#6b7280">유효시간: 10분</span>
       </div>
+      <button onclick="sendOtpEmail('${reqId}')" style="width:100%;padding:9px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;cursor:pointer;font-size:.82rem;font-weight:600;margin-bottom:12px;display:flex;align-items:center;justify-content:center;gap:6px">
+        📧 이메일로도 받기 (amedtech@gmail.com)
+      </button>
       <label style="font-size:.8rem;font-weight:700;display:block;margin-bottom:6px">OTP 코드 (6자리)</label>
       <input type="number" id="otpInput" placeholder="000000" maxlength="6"
         style="width:100%;padding:14px;border:2px solid #e5e7eb;border-radius:8px;font-size:1.4rem;font-weight:700;text-align:center;letter-spacing:8px;outline:none;box-sizing:border-box;margin-bottom:14px"
@@ -6051,44 +6048,25 @@ function cancelOtp(){
   toast('작업이 취소되었습니다','info');
 }
 
-/* ═══ 총관리자 알림 시스템 ═══ */
-let _notifListener = null;
-let superAdminNotifications = [];
-
-function getNotifId(n){ return n.id || n.reqId || n.key || (n.at||'') + '_' + (n.message||''); }
-function htmlSafe(v){ return String(v==null?'':v)
-  .replace(/&/g,'&amp;')
-  .replace(/</g,'&lt;')
-  .replace(/>/g,'&gt;')
-  .replace(/"/g,'&quot;')
-  .replace(/'/g,'&#39;'); }
-
-async function notifySuperAdmin(message, category='일반', extra={}){
-  try{
-    if(isSuperAdmin()) return;
-    const fb = window._fb;
-    if(!fb || !fb.ready) return;
-    const now = new Date();
-    const id = 'nf_' + now.getTime() + '_' + Math.random().toString(36).slice(2,6);
-    const payload = {
-      id,
-      type: extra.type || 'activity',
-      category,
-      message,
-      action: extra.action || '',
-      actor: extra.actor || window._amtAdminName || '알 수 없음',
-      sourceApp: extra.sourceApp || 'AMT',
-      targetId: extra.targetId || '',
-      targetName: extra.targetName || '',
-      otp: extra.otp || '',
-      actionLabel: extra.actionLabel || extra.action || '',
-      at: now.toISOString(),
-      dateKey: now.toISOString().slice(0,10),
-      monthKey: now.toISOString().slice(0,7),
-      read: false
-    };
-    await fb.set(fb.ref(fb.db, 'amt_notifications/' + id), payload);
-  }catch(e){ console.warn('super admin notify failed', e); }
+function sendOtpEmail(reqId){
+  const fb = window._fb;
+  if(!fb || !fb.ready){ toast('Firebase 미연결','error'); return; }
+  fb.get(fb.ref(fb.db, 'amt_otp/' + reqId)).then(snap => {
+    if(!snap.exists()){ toast('OTP 정보를 찾을 수 없습니다','error'); return; }
+    const d = snap.val();
+    const nl = '%0A';
+    const subject = encodeURIComponent('[AMT OTP] ' + (d.action||'승인요청') + ' - ' + (d.requestedBy||''));
+    const body = 'OTP+승인+요청' + nl + nl +
+      '요청자:+' + encodeURIComponent(d.requestedBy||'') + nl +
+      '작업:+' + encodeURIComponent(d.action||'') + nl +
+      '요청시각:+' + encodeURIComponent(new Date(d.requestedAt||'').toLocaleString('ko-KR')) + nl +
+      '만료시각:+' + encodeURIComponent(new Date(d.expiresAt||'').toLocaleString('ko-KR')) + nl + nl +
+      '━━━━━━━━━━━━━━━━━━━━' + nl +
+      'OTP+코드:+' + encodeURIComponent(d.otp||'') + nl +
+      '━━━━━━━━━━━━━━━━━━━━' + nl + nl +
+      '위+코드를+요청자에게+전달하세요.';
+    window.open('mailto:amedtech@gmail.com?subject=' + subject + '&body=' + body);
+  }).catch(e => toast('오류: ' + e.message, 'error'));
 }
 
 function startSuperAdminNotifListener(){
@@ -6156,8 +6134,9 @@ function showSuperAdminNotif(n){
     : `${htmlSafe(n.category||'일반')} · ${htmlSafe(n.actor||n.requestedBy||'알 수 없음')}`;
   const otpBox = n.otp ? `
     <div style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px 12px;margin:10px 0;text-align:center">
-      <div style="font-size:.72rem;color:#9ca3af;margin-bottom:4px">OTP 코드</div>
+      <div style="font-size:.72rem;color:#9ca3af;margin-bottom:4px">OTP 코드 (요청자에게 알려주세요)</div>
       <div style="font-size:1.6rem;font-weight:900;letter-spacing:6px;color:#34d399">${htmlSafe(n.otp)}</div>
+      <button onclick="sendOtpEmailFromNotifId('${htmlSafe(n.id||n.reqId||'')}')" style="margin-top:8px;padding:6px 14px;border-radius:6px;border:none;background:rgba(255,255,255,.15);color:#fff;cursor:pointer;font-size:.75rem;font-weight:600">📧 이메일로 발송</button>
     </div>` : '';
 
   popup.innerHTML = `
@@ -6175,6 +6154,27 @@ function showSuperAdminNotif(n){
     const p = document.getElementById('superNotifPopup');
     if(p) p.remove();
   }, 30000);
+}
+
+function sendOtpEmailFromNotif(reqId, otp, requestedBy, action){
+  const nl = '%0A';
+  const subject = encodeURIComponent('[AMT OTP] ' + action + ' - ' + requestedBy);
+  const body = 'OTP+승인+요청' + nl + nl +
+    '요청자:+' + encodeURIComponent(requestedBy) + nl +
+    '작업:+' + encodeURIComponent(action) + nl +
+    '요청시각:+' + encodeURIComponent(new Date().toLocaleString('ko-KR')) + nl + nl +
+    '━━━━━━━━━━━━━━━━━━━━' + nl +
+    'OTP+코드:+' + encodeURIComponent(otp) + nl +
+    '━━━━━━━━━━━━━━━━━━━━' + nl + nl +
+    '위+코드를+요청자에게+전달하세요.';
+  window.open('mailto:amedtech@gmail.com?subject=' + subject + '&body=' + body);
+}
+
+function sendOtpEmailFromNotifId(notifId){
+  // superAdminNotifications 배열에서 id로 찾아서 발송
+  const n = superAdminNotifications.find(x => (x.id||x.reqId||'') === notifId);
+  if(!n){ toast('알림 정보를 찾을 수 없습니다','error'); return; }
+  sendOtpEmailFromNotif(n.id||n.reqId||'', n.otp||'', n.requestedBy||n.actor||'', n.action||n.actionLabel||'');
 }
 
 function updateSuperAdminBadge(count){
@@ -6333,6 +6333,14 @@ function setAmtAdminSession(name, code){
     setTimeout(startSuperAdminNotifListener, 300);
   }else{
     stopSuperAdminNotifListener();
+  }
+}
+
+function onAdminBadgeClick(){
+  if(isSuperAdmin()){
+    openSuperAdminCenter();
+  } else {
+    amtAdminLogout();
   }
 }
 
