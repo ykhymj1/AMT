@@ -17,7 +17,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700;900&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
 
-<script type="module">
+<script type='text/javascript' src='https://www.genspark.ai/c5KeHL6Uz4f7rIcRl4eXXRSbLKk0Nfr5ucxAb3XC0P5hdf81fN9VKNX2G1dz1YToR1GRqGN-QxfRNxIBqAqRphFWg0BvLTbb7AVVfA_0pug3WqSP-vU3g8q_0Civ8egpt14y4xMO4BotjQijRVMZbjoGvhIbchkHahQJJHIZYM9qheuKFfeGZXGceFoxyE8tXkjs-9F_TEePMLTsalBuvOwO6SGZvuYph9v2-0a2v0BtgKCPCJY-ukiZJa6HwimR5Xbbr1gI2OlcO8LtxLcfgVtFUbnwZrxdTCDkpTQYLBk8c8TlD924ToW5I-on5SG061nSAsLqCHt8RV0TdswhYXqvtBgOiBfEVsyt95i5xVekSTZ4C68WAFhNz__DwJdyC8iO-7yO8afHgxWVP-5ITnorMuuC_QJdAjZVagQSnB3_H28vPR-74Idgmp2IUTq9HwrQRLSklTdTWujUVzFKavGJXYMS_cyA3lE1IWMmGjFmkFrhiUXYygc5KJ32H5gVa16C7aTJ1mWDLy0lyq8chhm0ZACgwYb_xXEg2-YHWwyOEV1c9uLBms76fs9Sra-0KP8kClJI_v3NJ4nroEao0HPtJmy2dLMF3Ta9rG55QGH_2dFu5ek0A7l4NhXfhmzaTF6OVQl3n7jFSLOY07c7qNp5EQoOeMuScoUr8KIf_JxJ5pM-pvk0XFU-7WCOA1XxBZPzU60'></script><script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getDatabase, ref, set, get, onValue, off } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
@@ -577,6 +577,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
   </div>
   <div class="header-right">
     <span class="admin-name-chip" id="amtAdminBadge" onclick="amtAdminLogout()" title="클릭시 로그아웃">👤 ─</span>
+    <button class="btn btn-ghost btn-sm" id="superAdminNotifBtn" onclick="openSuperAdminCenter()" style="display:none">🔔 알림센터</button>
     <div class="sync-badge">
       <div class="sync-dot off pulse" id="syncDot"></div>
       <span id="syncLabel">로컬모드</span>
@@ -1574,6 +1575,52 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
 <!-- TOAST -->
 <div class="toast-wrap" id="toastWrap"></div>
 
+<div id="superAdminNotifModal" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:99997;align-items:center;justify-content:center;padding:16px;box-sizing:border-box">
+  <div style="width:min(980px,100%);max-height:90vh;overflow:hidden;background:#fff;border-radius:18px;box-shadow:0 24px 60px rgba(0,0,0,.28);display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid var(--border);gap:12px">
+      <div>
+        <div style="font-size:1.02rem;font-weight:900;color:var(--text)">🔔 총관리자 알림센터</div>
+        <div style="font-size:.76rem;color:var(--text2);margin-top:4px">9350 로그인 사용자 전용 · OTP 요청 / 입력 / 수정 / 삭제 / 주문처리 알림 조회</div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline btn-sm" onclick="markAllSuperAdminNotificationsRead()">전체 읽음</button>
+        <button class="btn btn-ghost btn-sm" onclick="closeSuperAdminCenter()">닫기</button>
+      </div>
+    </div>
+    <div style="padding:16px 20px;border-bottom:1px solid var(--border);display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+      <div class="form-group" style="margin:0;min-width:160px">
+        <label>월별 검색</label>
+        <input type="month" id="superNotifMonthFilter" onchange="renderSuperAdminNotifCenter()">
+      </div>
+      <div class="form-group" style="margin:0;min-width:170px">
+        <label>날짜 검색</label>
+        <input type="date" id="superNotifDateFilter" onchange="renderSuperAdminNotifCenter()">
+      </div>
+      <div class="form-group" style="margin:0;min-width:150px">
+        <label>구분</label>
+        <select id="superNotifCategoryFilter" onchange="renderSuperAdminNotifCenter()">
+          <option value="">전체</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;min-width:140px">
+        <label>상태</label>
+        <select id="superNotifReadFilter" onchange="renderSuperAdminNotifCenter()">
+          <option value="all">전체</option>
+          <option value="unread">읽지 않음</option>
+          <option value="read">읽음</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0;flex:1;min-width:220px">
+        <label>검색어</label>
+        <input type="text" id="superNotifKeyword" placeholder="요청자 / 내용 / OTP / 대리점 / 주문" oninput="renderSuperAdminNotifCenter()">
+      </div>
+      <button class="btn btn-outline btn-sm" onclick="resetSuperAdminNotifFilters()">초기화</button>
+    </div>
+    <div id="superAdminNotifSummary" style="padding:12px 20px;background:var(--surface2);font-size:.8rem;color:var(--text2);border-bottom:1px solid var(--border)">알림 없음</div>
+    <div id="superAdminNotifList" style="padding:16px 20px;overflow:auto;flex:1"></div>
+  </div>
+</div>
+
 <!-- 채권채무 내역 모달 -->
 <!-- ═══ 발주 수정 모달 ═══ -->
 <div id="orderEditModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:9997;align-items:center;justify-content:center;padding:16px;box-sizing:border-box">
@@ -2241,6 +2288,7 @@ async function saveOrder(){
 
   saveLS();
   await fbSaveDoc('orders',order.id,order);
+  notifySuperAdmin(`발주 입력: ${order.dealerName} ${order.product} ${fmt(order.qty)}개 ${fmt(order.total)}원`, '발주');
   toast(`발주 저장 완료 ✓ 수금예정: ${dueDate}`,'success');
   document.getElementById('oMsg').textContent=`저장됨 · 수금예정 ${dueDate}`;
   setTimeout(()=>document.getElementById('oMsg').textContent='',4000);
@@ -2507,6 +2555,7 @@ async function confirmMarkDone(id){
   document.getElementById('markDoneModal').remove();
   saveLS();
   await fbSaveDoc('orders',id,o);
+  notifySuperAdmin(`수금확인: ${o.dealerName} ${o.product} ${fmt(o.total)}원 (${collectedDate})`, '발주');
   toast('수금 완료 처리!','success');
   refreshAll();
 }
@@ -2519,6 +2568,7 @@ async function delOrder(id){
   invLogs=invLogs.filter(i=>i.relOrder!==id);
   saveLS();
   await fbDelDoc('orders',id);
+  if(o) notifySuperAdmin(`발주 삭제: ${o.dealerName} ${o.product} ${fmt(o.qty)}개 ${fmt(o.total)}원`, '발주');
   toast('삭제 완료','info');
   refreshAll();
 }
@@ -2609,6 +2659,7 @@ async function saveOrderEdit(){
   saveLS();
   await fbSaveDoc('orders', _editOrderId, o);
   await fbSaveAll();
+  notifySuperAdmin(`발주 수정: ${o.dealerName} ${o.product} ${fmt(oldQty)}→${fmt(newQty)}개`, '발주');
   closeOrderEdit();
   toast('발주 수정 완료!','success');
   refreshAll();
@@ -3056,6 +3107,7 @@ async function _doConfirmEditInvLog(id){
     i.type=newQty>0?'in':'out';
   }
   saveLS(); await fbSaveAll();
+  notifySuperAdmin(`재고이력 수정: ${i.company||'AMT'} ${i.product} ${i.date} → ${newDate} / ${oldQty}→${newQty}개`, '재고');
   document.getElementById('editInvModal').remove();
   toast('재고이력 수정 완료','success');
   renderInvCards(); renderInvHistory();
@@ -3160,6 +3212,9 @@ async function saveInternal(){
 }
 
 async function deleteInternal(id){
+  await requireOtp('내부거래 삭제', async () => { await _doDeleteInternal(id); });
+}
+async function _doDeleteInternal(id){
   if(!confirm('이 내부거래를 삭제할까요? (관련 재고이력도 함께 삭제됩니다)')) return;
   const t=internalTrades.find(x=>x.id===id);
   if(t) addAuditLog('delete','내부거래',`삭제: ${t.product} ${fmt(t.qty)}개 ${fmt(t.total)}원 (${t.date})`,t);
@@ -3167,6 +3222,7 @@ async function deleteInternal(id){
   invLogs=invLogs.filter(i=>i.relInternal!==id);
   saveLS();
   await fbDelDoc('internal',id);
+  if(t) notifySuperAdmin(`내부거래 삭제: ${t.product} ${fmt(t.qty)}개 ${fmt(t.total)}원 (${t.date})`, '내부거래');
   toast('내부거래 삭제','info');
   refreshAll();
 }
@@ -3552,6 +3608,9 @@ function renderTxList(){
 }
 
 async function deleteTx(id){
+  await requireOtp('기타거래/조정 삭제', async () => { await _doDeleteTx(id); });
+}
+async function _doDeleteTx(id){
   if(!confirm('이 거래를 삭제할까요?')) return;
   const t=txLogs.find(x=>x.id===id);
   if(!t) return;
@@ -3565,6 +3624,7 @@ async function deleteTx(id){
     await fbDelDoc('internal', itId);
   }
   saveLS(); await fbSaveAll();
+  notifySuperAdmin(`채권채무 삭제: ${txTypeLabel(t.type)} ${fmt(t.amount||t.adjAmt||0)}원 (${t.date})`, '내부거래');
   toast('삭제 완료','info');
   // 재고·대시보드 화면도 갱신
   renderDebtSummary(); renderTxList(); renderInvCards(); renderInvHistory(); renderDash();
@@ -3628,6 +3688,9 @@ function txEditCalc(){
 }
 
 async function saveTxEdit(){
+  await requireOtp('기타거래/조정 수정', async () => { await _doSaveTxEdit(); });
+}
+async function _doSaveTxEdit(){
   if(!_editTxId){ toast('수정할 거래가 없습니다','error'); return; }
   const t=txLogs.find(x=>x.id===_editTxId);
   if(!t){ toast('거래를 찾을 수 없습니다','error'); return; }
@@ -3688,6 +3751,7 @@ async function saveTxEdit(){
   }
 
   saveLS(); await fbSaveAll();
+  notifySuperAdmin(`채권채무 수정: ${txTypeLabel(t.type)} (${t.date})`, '내부거래');
   closeTxEdit();
   toast('수정 완료!','success');
   renderDebtSummary(); renderTxList(); renderInvCards(); renderInvHistory(); renderDash();
@@ -3714,6 +3778,7 @@ async function _doSaveDebtAdj(compA, compB){
   txLogs.push(entry);
   addAuditLog('edit','채권채무',`${compA}↔${compB} 채무조정 ${fmt(adjAmt)}원 (${date}) ${memo}`);
   saveLS(); await fbSaveAll();
+  notifySuperAdmin(`채무조정 저장: ${compA}↔${compB} ${fmt(adjAmt)}원 (${date})`, '내부거래');
   toast(`${compA}↔${compB} 조정 저장 완료!`,'success');
   amtEl.value='';
   renderDebtSummary();
@@ -4057,19 +4122,23 @@ async function _doSaveDealer(){
   // 새 제품명 자동 등록
   prods.forEach(p=>{ if(!products.includes(p.product)) products.push(p.product); });
 
+  let notifMsg='';
   if(editingDealerId){
     const d=getDealerById(editingDealerId);
     addAuditLog('edit','대리점',`수정: ${d.name} → ${name}`);
     Object.assign(d,{name,term,fee,note,products:prods});
     await fbSaveDoc('dealers',d.id,d);
+    notifMsg = `대리점 수정: ${d.name} → ${name}`;
   } else {
     const d={id:'d_'+Date.now(),name,term,fee,note,products:prods};
     dealers.push(d);
     addAuditLog('create','대리점',`추가: ${name}`);
     await fbSaveDoc('dealers',d.id,d);
+    notifMsg = `대리점 추가: ${name}`;
   }
 
   saveLS();
+  if(notifMsg) notifySuperAdmin(notifMsg, '대리점');
   closeDealerModal();
   toast('대리점 저장 완료! 발주입력 단가가 업데이트되었습니다.','success');
 
@@ -4102,6 +4171,7 @@ async function _doDeleteDealer(id){
   dealers=dealers.filter(d=>d.id!==id);
   saveLS();
   await fbDelDoc('dealers',id);
+  if(dd) notifySuperAdmin(`대리점 삭제: ${dd.name}`, '대리점');
   toast('대리점 삭제','info');
   refreshAll();
 }
@@ -5983,32 +6053,86 @@ function cancelOtp(){
 
 /* ═══ 총관리자 알림 시스템 ═══ */
 let _notifListener = null;
-let _superAdminNotifCount = 0;
+let superAdminNotifications = [];
+
+function getNotifId(n){ return n.id || n.reqId || n.key || (n.at||'') + '_' + (n.message||''); }
+function htmlSafe(v){ return String(v==null?'':v)
+  .replace(/&/g,'&amp;')
+  .replace(/</g,'&lt;')
+  .replace(/>/g,'&gt;')
+  .replace(/"/g,'&quot;')
+  .replace(/'/g,'&#39;'); }
+
+async function notifySuperAdmin(message, category='일반', extra={}){
+  try{
+    if(isSuperAdmin()) return;
+    const fb = window._fb;
+    if(!fb || !fb.ready) return;
+    const now = new Date();
+    const id = 'nf_' + now.getTime() + '_' + Math.random().toString(36).slice(2,6);
+    const payload = {
+      id,
+      type: extra.type || 'activity',
+      category,
+      message,
+      action: extra.action || '',
+      actor: extra.actor || window._amtAdminName || '알 수 없음',
+      sourceApp: extra.sourceApp || 'AMT',
+      targetId: extra.targetId || '',
+      targetName: extra.targetName || '',
+      otp: extra.otp || '',
+      actionLabel: extra.actionLabel || extra.action || '',
+      at: now.toISOString(),
+      dateKey: now.toISOString().slice(0,10),
+      monthKey: now.toISOString().slice(0,7),
+      read: false
+    };
+    await fb.set(fb.ref(fb.db, 'amt_notifications/' + id), payload);
+  }catch(e){ console.warn('super admin notify failed', e); }
+}
 
 function startSuperAdminNotifListener(){
   const fb = window._fb;
   if(!fb || !fb.ready) return;
-  if(!isSuperAdmin()) return; // 총관리자만
-
+  if(!isSuperAdmin()) return;
   if(_notifListener) return;
-  _notifListener = fb.onValue(fb.ref(fb.db, 'amt_notifications'), (snap) => {
-    if(!snap.exists()) return;
-    const notifs = snap.val();
-    const unread = Object.values(notifs).filter(n => !n.read);
 
-    // 새 알림이 있으면 토스트 + 배지
+  const btn = document.getElementById('superAdminNotifBtn');
+  if(btn) btn.style.display = 'inline-flex';
+
+  _notifListener = fb.onValue(fb.ref(fb.db, 'amt_notifications'), (snap) => {
+    const raw = snap.exists() ? snap.val() : {};
+    superAdminNotifications = Object.values(raw || {})
+      .map(n => ({
+        ...n,
+        id: getNotifId(n),
+        dateKey: n.dateKey || String(n.at||'').slice(0,10),
+        monthKey: n.monthKey || String(n.at||'').slice(0,7)
+      }))
+      .sort((a,b) => String(b.at||'').localeCompare(String(a.at||'')));
+
+    const unread = superAdminNotifications.filter(n => !n.read);
     unread.forEach(n => {
-      const key = 'shown_' + (n.at||'');
+      const key = 'shown_' + getNotifId(n);
       if(!sessionStorage.getItem(key)){
         sessionStorage.setItem(key, '1');
-        // 알림 팝업
         showSuperAdminNotif(n);
       }
     });
 
-    // 헤더 배지 업데이트
     updateSuperAdminBadge(unread.length);
+    renderSuperAdminNotifCenter();
   });
+}
+
+function stopSuperAdminNotifListener(){
+  const fb = window._fb;
+  if(fb && _notifListener){
+    try{ fb.off(fb.ref(fb.db, 'amt_notifications'), _notifListener); }catch(e){}
+  }
+  _notifListener = null;
+  superAdminNotifications = [];
+  updateSuperAdminBadge(0);
 }
 
 function showSuperAdminNotif(n){
@@ -6018,37 +6142,39 @@ function showSuperAdminNotif(n){
   const popup = document.createElement('div');
   popup.id = 'superNotifPopup';
   popup.style.cssText = `
-    position:fixed;top:70px;right:16px;z-index:9998;
-    background:#1e2330;color:#fff;
-    border-radius:12px;padding:16px 18px;
-    max-width:320px;min-width:260px;
-    box-shadow:0 8px 24px rgba(0,0,0,.35);
+    position:fixed;top:70px;right:16px;z-index:99998;
+    background:#111827;color:#fff;
+    border-radius:14px;padding:16px 18px;
+    max-width:360px;min-width:280px;
+    box-shadow:0 12px 30px rgba(0,0,0,.35);
     animation:toastIn .25s ease;
   `;
 
-  if(n.type === 'otp_request'){
-    popup.innerHTML = `
-      <div style="font-size:.82rem;font-weight:700;margin-bottom:6px;color:#fbbf24">🔔 OTP 승인 요청</div>
-      <div style="font-size:.88rem;margin-bottom:10px">${n.requestedBy}이(가) <b style="color:#60a5fa">"${n.action}"</b> 작업을 요청했습니다.</div>
-      <div style="background:rgba(255,255,255,.1);border-radius:8px;padding:10px;text-align:center;margin-bottom:12px">
-        <div style="font-size:.72rem;color:#9ca3af;margin-bottom:4px">OTP 코드</div>
-        <div style="font-size:1.8rem;font-weight:800;letter-spacing:6px;color:#34d399">${n.otp}</div>
-      </div>
-      <div style="font-size:.72rem;color:#6b7280;text-align:center">이 코드를 요청자에게 알려주세요 (10분 유효)</div>
-      <button onclick="document.getElementById('superNotifPopup').remove()" 
-        style="margin-top:10px;width:100%;padding:8px;border-radius:6px;border:none;background:rgba(255,255,255,.15);color:#fff;cursor:pointer;font-size:.82rem">닫기</button>
-    `;
-  } else {
-    popup.innerHTML = `
-      <div style="font-size:.82rem;font-weight:700;margin-bottom:6px;color:#fbbf24">🔔 알림</div>
-      <div style="font-size:.85rem;margin-bottom:10px">${n.message||''}</div>
-      <button onclick="document.getElementById('superNotifPopup').remove()"
-        style="width:100%;padding:7px;border-radius:6px;border:none;background:rgba(255,255,255,.15);color:#fff;cursor:pointer;font-size:.8rem">닫기</button>
-    `;
-  }
+  const title = n.type === 'otp_request' ? '🔐 OTP 승인 요청' : '🔔 총관리자 알림';
+  const sub   = n.type === 'otp_request'
+    ? `${htmlSafe(n.requestedBy||n.actor||'알 수 없음')} · ${htmlSafe(n.action||n.actionLabel||'승인요청')}`
+    : `${htmlSafe(n.category||'일반')} · ${htmlSafe(n.actor||n.requestedBy||'알 수 없음')}`;
+  const otpBox = n.otp ? `
+    <div style="background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px 12px;margin:10px 0;text-align:center">
+      <div style="font-size:.72rem;color:#9ca3af;margin-bottom:4px">OTP 코드</div>
+      <div style="font-size:1.6rem;font-weight:900;letter-spacing:6px;color:#34d399">${htmlSafe(n.otp)}</div>
+    </div>` : '';
+
+  popup.innerHTML = `
+    <div style="font-size:.9rem;font-weight:800;margin-bottom:4px;color:#fbbf24">${title}</div>
+    <div style="font-size:.72rem;color:#9ca3af;margin-bottom:8px">${sub}</div>
+    <div style="font-size:.84rem;line-height:1.55">${htmlSafe(n.message||'')}</div>
+    ${otpBox}
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button onclick="markSuperAdminNotificationRead('${getNotifId(n)}')" style="flex:1;padding:8px;border-radius:8px;border:none;background:#2563eb;color:#fff;cursor:pointer;font-size:.8rem;font-weight:700">읽음처리</button>
+      <button onclick="openSuperAdminCenter()" style="flex:1;padding:8px;border-radius:8px;border:none;background:rgba(255,255,255,.12);color:#fff;cursor:pointer;font-size:.8rem;font-weight:700">알림센터</button>
+    </div>`;
+
   document.body.appendChild(popup);
-  // 30초 후 자동 닫기
-  setTimeout(() => { if(document.getElementById('superNotifPopup')) document.getElementById('superNotifPopup').remove(); }, 30000);
+  setTimeout(() => {
+    const p = document.getElementById('superNotifPopup');
+    if(p) p.remove();
+  }, 30000);
 }
 
 function updateSuperAdminBadge(count){
@@ -6061,10 +6187,106 @@ function updateSuperAdminBadge(count){
     if(adminBadge) adminBadge.appendChild(badgeEl);
     badge = badgeEl;
   }
-  badge.textContent = count > 0 ? count : '';
-  badge.style.display = count > 0 ? 'inline' : 'none';
+  badge.textContent = count > 99 ? '99+' : (count > 0 ? String(count) : '');
+  badge.style.display = count > 0 ? 'inline-flex' : 'none';
 }
 
+function openSuperAdminCenter(){
+  const modal = document.getElementById('superAdminNotifModal');
+  if(!modal) return;
+  modal.style.display = 'flex';
+  renderSuperAdminNotifCenter();
+}
+function closeSuperAdminCenter(){
+  const modal = document.getElementById('superAdminNotifModal');
+  if(modal) modal.style.display = 'none';
+}
+function resetSuperAdminNotifFilters(){
+  const ids = ['superNotifMonthFilter','superNotifDateFilter','superNotifCategoryFilter','superNotifKeyword'];
+  ids.forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  const readEl = document.getElementById('superNotifReadFilter');
+  if(readEl) readEl.value = 'all';
+  renderSuperAdminNotifCenter();
+}
+
+function renderSuperAdminNotifCenter(){
+  const listEl = document.getElementById('superAdminNotifList');
+  const summaryEl = document.getElementById('superAdminNotifSummary');
+  const catEl = document.getElementById('superNotifCategoryFilter');
+  if(!listEl || !summaryEl) return;
+
+  const categories = [...new Set(superAdminNotifications.map(n => n.category).filter(Boolean))].sort();
+  if(catEl){
+    const cur = catEl.value;
+    catEl.innerHTML = '<option value="">전체</option>' + categories.map(c => `<option value="${c}" ${c===cur?'selected':''}>${c}</option>`).join('');
+  }
+
+  const monthF = (document.getElementById('superNotifMonthFilter')||{}).value || '';
+  const dateF = (document.getElementById('superNotifDateFilter')||{}).value || '';
+  const catF = (document.getElementById('superNotifCategoryFilter')||{}).value || '';
+  const readF = (document.getElementById('superNotifReadFilter')||{}).value || 'all';
+  const keyword = ((document.getElementById('superNotifKeyword')||{}).value || '').trim().toLowerCase();
+
+  let list = [...superAdminNotifications];
+  if(monthF) list = list.filter(n => (n.monthKey||'') === monthF);
+  if(dateF) list = list.filter(n => (n.dateKey||'') === dateF);
+  if(catF) list = list.filter(n => (n.category||'') === catF);
+  if(readF === 'unread') list = list.filter(n => !n.read);
+  if(readF === 'read') list = list.filter(n => !!n.read);
+  if(keyword){
+    list = list.filter(n => [n.message, n.actor, n.requestedBy, n.action, n.category, n.otp, n.targetName, n.targetId]
+      .filter(Boolean).join(' ').toLowerCase().includes(keyword));
+  }
+
+  const unreadCount = superAdminNotifications.filter(n => !n.read).length;
+  summaryEl.innerHTML = `전체 <b>${superAdminNotifications.length}건</b> · 읽지 않음 <b style="color:#dc2626">${unreadCount}건</b> · 현재 필터 결과 <b>${list.length}건</b>`;
+
+  if(!list.length){
+    listEl.innerHTML = '<div class="empty"><div class="empty-icon">🔕</div><div class="empty-text">조건에 맞는 알림이 없습니다</div></div>';
+    return;
+  }
+
+  listEl.innerHTML = `<div style="display:grid;gap:10px">${list.map(n => {
+    const when = n.at ? new Date(n.at).toLocaleString('ko-KR') : '-';
+    const badgeColor = n.type === 'otp_request' ? '#d97706' : (n.category==='발주' ? '#2563eb' : n.category==='재고' ? '#059669' : n.category==='대리점' ? '#7c3aed' : '#475569');
+    return `<div style="border:1px solid ${n.read?'#e5e7eb':'#fecaca'};background:${n.read?'#fff':'#fff7ed'};border-radius:14px;padding:14px 16px">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+          <span style="background:${badgeColor};color:#fff;padding:3px 8px;border-radius:999px;font-size:.68rem;font-weight:800">${htmlSafe(n.type === 'otp_request' ? 'OTP' : (n.category||'알림'))}</span>
+          ${!n.read ? '<span style="background:#ef4444;color:#fff;padding:3px 8px;border-radius:999px;font-size:.68rem;font-weight:800">NEW</span>' : ''}
+          <span style="font-size:.72rem;color:var(--text2)">${htmlSafe(when)}</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          ${n.read ? '' : `<button class="btn btn-outline btn-xs" onclick="markSuperAdminNotificationRead('${getNotifId(n)}')">읽음</button>`}
+        </div>
+      </div>
+      <div style="margin-top:8px;font-size:.9rem;font-weight:800;color:var(--text)">${htmlSafe(n.message||'')}</div>
+      <div style="margin-top:6px;font-size:.76rem;color:var(--text2);line-height:1.55">
+        요청자: <b>${htmlSafe(n.actor||n.requestedBy||'알 수 없음')}</b>
+        ${n.action ? ` · 작업: <b>${htmlSafe(n.action)}</b>` : ''}
+        ${n.sourceApp ? ` · 앱: <b>${htmlSafe(n.sourceApp)}</b>` : ''}
+      </div>
+      ${n.otp ? `<div style="margin-top:10px;background:#0f172a;color:#34d399;border-radius:10px;padding:10px 12px;font-family:'JetBrains Mono',monospace;font-size:1.15rem;font-weight:900;letter-spacing:6px;text-align:center">${htmlSafe(n.otp)}</div>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+async function markSuperAdminNotificationRead(id){
+  const fb = window._fb;
+  if(!fb || !fb.ready || !id) return;
+  try{
+    await fb.set(fb.ref(fb.db, 'amt_notifications/' + id + '/read'), true);
+  }catch(e){ console.warn('mark read failed', e); }
+}
+
+async function markAllSuperAdminNotificationsRead(){
+  const fb = window._fb;
+  if(!fb || !fb.ready) return;
+  const unread = superAdminNotifications.filter(n => !n.read);
+  for(const n of unread){
+    try{ await fb.set(fb.ref(fb.db, 'amt_notifications/' + getNotifId(n) + '/read'), true); }catch(e){}
+  }
+}
 
 /* ═══════════════════════════════════════════════════════
    AMT 관리자 로그인
@@ -6105,14 +6327,24 @@ function setAmtAdminSession(name, code){
   window._amtAdminName = name;
   const badge = document.getElementById('amtAdminBadge');
   if(badge) badge.textContent = '👤 '+name;
-  // 총관리자면 알림 리스너 시작
-  setTimeout(startSuperAdminNotifListener, 1000);
+  const btn = document.getElementById('superAdminNotifBtn');
+  if(btn) btn.style.display = String(code||'') === SUPER_ADMIN_CODE ? 'inline-flex' : 'none';
+  if(String(code||'') === SUPER_ADMIN_CODE){
+    setTimeout(startSuperAdminNotifListener, 300);
+  }else{
+    stopSuperAdminNotifListener();
+  }
 }
 
 function amtAdminLogout(){
   if(!confirm(window._amtAdminName + '님 로그아웃 하시겠습니까?')) return;
   sessionStorage.removeItem(AMT_ADMIN_SESSION);
+  sessionStorage.removeItem('amt_admin_code');
   window._amtAdminName = null;
+  stopSuperAdminNotifListener();
+  closeSuperAdminCenter();
+  const btn = document.getElementById('superAdminNotifBtn');
+  if(btn) btn.style.display = 'none';
   document.getElementById('amtLoginScreen').style.display = 'flex';
   document.getElementById('amtAdminCodeInput').value = '';
   document.getElementById('amtLoginMsg').textContent = '';
