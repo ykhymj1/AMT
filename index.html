@@ -135,6 +135,13 @@ body{
 }
 .logo-text span{color:var(--blue);font-weight:900;}
 .header-right{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.admin-name-chip{
+  font-size:.7rem;color:var(--blue);
+  background:var(--blue-light);
+  padding:3px 9px;border-radius:20px;
+  border:1px solid var(--blue-mid);
+  font-weight:700;cursor:pointer;
+}
 
 .sync-badge{
   display:flex;align-items:center;gap:5px;
@@ -535,6 +542,33 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
 </head>
 <body>
 
+<!-- ─── AMT 관리자 로그인 화면 ─── -->
+<div id="amtLoginScreen" style="
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  min-height:100vh;background:linear-gradient(145deg,#eff6ff,#dbeafe 50%,#bfdbfe20);
+  padding:24px;position:fixed;inset:0;z-index:9999;
+">
+  <div style="width:72px;height:72px;border-radius:18px;background:var(--blue,#2563eb);display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:1rem;font-weight:700;color:#fff;box-shadow:0 8px 24px rgba(37,99,235,.35);margin-bottom:18px;letter-spacing:1px">AMT</div>
+  <div style="font-size:1.4rem;font-weight:900;color:var(--text,#111827);margin-bottom:6px">매출관리 시스템</div>
+  <div style="font-size:.82rem;color:var(--text2,#4b5563);margin-bottom:28px">관리자 코드를 입력하세요</div>
+  <div style="width:100%;max-width:320px;background:#fff;border-radius:16px;padding:24px;box-shadow:0 8px 32px rgba(60,70,110,.12);border:1px solid var(--border,#e4e7ef)">
+    <label style="font-size:.78rem;font-weight:700;display:block;margin-bottom:6px;color:var(--text,#111827)">관리자 코드</label>
+    <input type="password" id="amtAdminCodeInput" placeholder="코드 입력"
+      style="width:100%;background:var(--surface2,#f8f9fc);border:2px solid var(--border,#e4e7ef);border-radius:8px;
+        color:var(--text,#111827);font-family:inherit;font-size:1rem;padding:12px 14px;
+        outline:none;font-weight:700;text-align:center;letter-spacing:4px;margin-bottom:14px;
+        transition:border-color .15s;box-sizing:border-box;"
+      onfocus="this.style.borderColor='var(--blue,#2563eb)'"
+      onblur="this.style.borderColor='var(--border,#e4e7ef)'"
+      onkeydown="if(event.key==='Enter')doAmtLogin()">
+    <button onclick="doAmtLogin()" style="width:100%;background:var(--blue,#2563eb);color:#fff;border:none;border-radius:8px;padding:12px;font-family:inherit;font-size:.95rem;font-weight:700;cursor:pointer;">
+      🔑 로그인
+    </button>
+    <div id="amtLoginMsg" style="text-align:center;font-size:.78rem;color:#dc2626;margin-top:10px;min-height:18px"></div>
+  </div>
+</div>
+
+
 <!-- HEADER -->
 <div class="header">
   <div class="logo">
@@ -542,6 +576,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
     <div class="logo-text"><span>AMT</span> · KY 관리시스템</div>
   </div>
   <div class="header-right">
+    <span class="admin-name-chip" id="amtAdminBadge" onclick="amtAdminLogout()" title="클릭시 로그아웃">👤 ─</span>
     <div class="sync-badge">
       <div class="sync-dot off pulse" id="syncDot"></div>
       <span id="syncLabel">로컬모드</span>
@@ -561,6 +596,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
   <button class="nav-btn" data-page="internal" onclick="nav(this)">🔄 내부거래</button>
   <button class="nav-btn" data-page="inventory" onclick="nav(this)">🗃️ 재고</button>
   <button class="nav-btn" data-page="dealers" onclick="nav(this)">🏢 대리점관리</button>
+  <button class="nav-btn" data-page="ky-orders" onclick="nav(this);initKyAdmin()">🛒 KY주문관리</button>
   <button class="nav-btn" data-page="settings" onclick="nav(this)">⚙️ 설정</button>
 </nav>
 
@@ -1210,6 +1246,78 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
   </div>
 </div>
 
+<!-- ═══════════ KY 주문관리 (관리자) ═══════════ -->
+<div class="page" id="page-ky-orders">
+  <div class="card" style="margin-bottom:14px">
+    <div class="card-header">
+      <div class="card-title" style="color:var(--ky)">
+        <div class="card-title-dot" style="background:var(--ky)"></div>
+        🛒 KY 주문관리
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="kyAdminRefresh()">🔄 새로고침</button>
+        <div class="sync-badge" id="kyAdminSync">
+          <div class="sync-dot off" id="kyAdminSyncDot"></div>
+          <span id="kyAdminSyncLabel">대기</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="kyAdminFbWarn" style="display:none;background:var(--yellow-light);border:1.5px solid var(--yellow);border-radius:6px;padding:10px 14px;font-size:.78rem;color:#92400e;margin-bottom:12px">
+      ⚠️ Firebase 미연결 — 설정 탭에서 Firebase 정보를 입력·저장하고 새로고침하세요.
+    </div>
+
+    <!-- KPI -->
+    <div class="kpi-grid" style="margin-bottom:14px">
+      <div class="kpi" style="--kpi-color:var(--ky)"><div class="kpi-label">전체 주문</div><div class="kpi-value" id="kyKpiTotal">0</div><div class="kpi-sub">건</div></div>
+      <div class="kpi" style="--kpi-color:var(--yellow)"><div class="kpi-label">⏳ 대기중</div><div class="kpi-value" id="kyKpiPending" style="color:var(--yellow)">0</div><div class="kpi-sub">건</div></div>
+      <div class="kpi" style="--kpi-color:var(--green)"><div class="kpi-label">✅ 접수완료</div><div class="kpi-value" id="kyKpiAccepted" style="color:var(--green)">0</div><div class="kpi-sub">건</div></div>
+      <div class="kpi" style="--kpi-color:var(--ky)"><div class="kpi-label">이번달 금액</div><div class="kpi-value" id="kyKpiAmt">0</div><div class="kpi-sub">원</div></div>
+    </div>
+
+    <!-- Filter -->
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;padding:10px 12px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">
+      <select id="kyFStatus" onchange="kyApplyFilter()" style="flex:1;min-width:110px">
+        <option value="">전체 상태</option>
+        <option value="pending">대기중</option>
+        <option value="accepted">접수완료</option>
+        <option value="shipped">출고완료</option>
+        <option value="rejected">거절됨</option>
+      </select>
+      <select id="kyFDealer" onchange="kyApplyFilter()" style="flex:1;min-width:110px">
+        <option value="">전체 대리점</option>
+      </select>
+      <input type="date" id="kyFFrom" onchange="kyApplyFilter()" title="시작일" style="flex:1;min-width:110px">
+      <input type="date" id="kyFTo" onchange="kyApplyFilter()" title="종료일" style="flex:1;min-width:110px">
+      <button class="btn btn-ghost btn-sm" onclick="kyResetFilter()">초기화</button>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="font-weight:800;font-size:.88rem;display:flex;align-items:center;gap:8px">
+        주문 목록
+        <span id="kyNewBadge" style="display:none;background:#ef4444;color:#fff;padding:2px 8px;border-radius:10px;font-size:.6rem;font-weight:700;animation:pulse 1.5s infinite">🔔 새 주문</span>
+      </div>
+      <span id="kyOrderCount" style="font-size:.8rem;color:var(--text3)"></span>
+    </div>
+
+    <div id="kyOrdersList">
+      <div class="empty"><div class="empty-icon">⏳</div><p>불러오는 중...</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- KY 주문 처리 모달 -->
+<div id="kyDetailModal" style="display:none;position:fixed;inset:0;background:rgba(17,24,39,.45);backdrop-filter:blur(3px);z-index:800;align-items:center;justify-content:center;padding:16px">
+  <div style="background:#fff;border-radius:16px;padding:24px;width:100%;max-width:420px;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(60,70,110,0.2);animation:fadeIn .22s ease">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--border)">
+      <span style="font-size:1rem;font-weight:700">주문 상세</span>
+      <button onclick="kyCloseDetail()" style="background:var(--gray-light);border:none;color:var(--text2);font-size:1rem;cursor:pointer;padding:5px 9px;border-radius:6px">✕</button>
+    </div>
+    <div id="kyDetailContent"></div>
+    <div id="kyActionArea" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--border)"></div>
+  </div>
+</div>
+
 <!-- ═══════════ 설정 ═══════════ -->
 <div class="page" id="page-settings">
   <div class="card">
@@ -1335,6 +1443,44 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
     }
   }
 }</div>
+
+    <hr class="divider">
+    <div class="setting-section">
+      <h3>👤 관리자 코드 관리</h3>
+      <p style="font-size:.78rem;color:var(--text2);margin-bottom:12px">
+        현재 로그인된 관리자만 수정 가능합니다. 코드를 모를 경우 아래 승인 요청 버튼을 사용하세요.
+      </p>
+      <button class="btn btn-outline btn-sm" onclick="loadAdminCodes()" style="margin-bottom:12px">🔄 목록 불러오기</button>
+      <div id="adminCodeListWrap" style="margin-bottom:14px;max-height:220px;overflow-y:auto"></div>
+      <!-- 신규 추가 -->
+      <div style="background:var(--surface2);border-radius:8px;padding:12px;border:1px solid var(--border)">
+        <div style="font-size:.78rem;font-weight:700;margin-bottom:8px;color:var(--text2)">+ 새 관리자 추가</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <input type="text" id="newAdminName" placeholder="이름" style="flex:1;min-width:90px">
+          <input type="text" id="newAdminCode" placeholder="코드 (숫자)" style="flex:1;min-width:90px">
+          <button class="btn btn-primary btn-sm" onclick="addAdminCode()">+ 추가</button>
+        </div>
+      </div>
+      <div style="margin-top:12px;padding:10px 12px;background:var(--yellow-light);border-radius:8px;border:1px solid #fcd34d;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span style="font-size:.78rem;color:#92400e">코드를 모르는 경우 관리자에게 승인 요청을 보내세요</span>
+        <button class="btn btn-sm" style="background:#d97706;color:#fff;border:none" onclick="requestCodeChange('관리자')">📧 승인 요청 메일</button>
+      </div>
+    </div>
+
+    <hr class="divider">
+    <div class="setting-section">
+      <h3>🏢 대리점 코드 관리</h3>
+      <p style="font-size:.78rem;color:var(--text2);margin-bottom:12px">
+        대리점 로그인 시 사용하는 코드입니다. 코드 변경 시 대리점에 새 코드를 알려주세요.
+      </p>
+      <button class="btn btn-outline btn-sm" onclick="loadDealerCodes()" style="margin-bottom:12px">🔄 목록 불러오기</button>
+      <div id="dealerCodeListWrap" style="margin-bottom:12px;max-height:220px;overflow-y:auto"></div>
+      <div style="margin-top:8px;padding:10px 12px;background:var(--yellow-light);border-radius:8px;border:1px solid #fcd34d;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <span style="font-size:.78rem;color:#92400e">코드를 모르는 경우 승인 요청을 보내세요</span>
+        <button class="btn btn-sm" style="background:#d97706;color:#fff;border:none" onclick="requestCodeChange('대리점')">📧 승인 요청 메일</button>
+      </div>
+    </div>
+
       <hr class="divider">
       <h3>📋 수금조건 코드 안내</h3>
       <div class="table-wrap">
@@ -5295,6 +5441,213 @@ function toast(msg,type='info'){
   setTimeout(()=>{ el.style.animation='toastIn .25s ease reverse'; setTimeout(()=>el.remove(),250); },3500);
 }
 
+/* ═══════════════════════════════════════════════════════
+   KY 주문관리 (관리자) — index.html 통합
+═══════════════════════════════════════════════════════ */
+let kyAllOrders = [];
+let kyFilteredOrders = [];
+let _kyListener = null;
+let kyPrevPendingIds = new Set();
+let _kyDetailId = null;
+let _kyAdminInited = false;
+
+function initKyAdmin(){
+  if(_kyAdminInited) return;
+  _kyAdminInited = true;
+  const fb = window._fb;
+  if(!fb || !fb.ready){
+    document.getElementById('kyAdminFbWarn').style.display = 'block';
+    kySetSync(false, '미연결');
+    document.getElementById('kyOrdersList').innerHTML =
+      '<div class="empty"><div class="empty-icon">⚠️</div><p>Firebase 미연결</p></div>';
+    return;
+  }
+  kySetSync(true, '연결됨');
+  kyStartListener();
+}
+
+function kySetSync(on, label){
+  const dot = document.getElementById('kyAdminSyncDot');
+  const lb = document.getElementById('kyAdminSyncLabel');
+  dot.className = 'sync-dot' + (on ? ' pulse' : ' off');
+  if(label) lb.textContent = label;
+}
+
+function kyStartListener(){
+  const fb = window._fb;
+  if(!fb || !fb.ready || _kyListener) return;
+  let first = true;
+  _kyListener = fb.onValue(fb.ref(fb.db, 'ky_orders'), (snap) => {
+    if(!snap.exists()){ kyAllOrders = []; kyRenderOrders([]); kyUpdateKpi([]); return; }
+    const incoming = Object.values(snap.val()).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    if(!first){
+      const newPend = incoming.filter(o => o.status==='pending' && !kyPrevPendingIds.has(o.id));
+      if(newPend.length){
+        newPend.forEach(o => toast('🔔 새 주문: '+o.dealerName+' — '+fmt(o.total)+'원','info'));
+        const badge = document.getElementById('kyNewBadge');
+        if(badge){ badge.style.display='inline-block'; setTimeout(()=>badge.style.display='none',10000); }
+      }
+    }
+    kyPrevPendingIds = new Set(incoming.filter(o=>o.status==='pending').map(o=>o.id));
+    kyAllOrders = incoming;
+    first = false;
+    kyUpdateDealerFilter();
+    kyApplyFilter();
+    kyUpdateKpi(incoming);
+    kySetSync(true,'실시간');
+  });
+  if(Notification && Notification.permission==='default') Notification.requestPermission();
+}
+
+function kyAdminRefresh(){
+  const fb = window._fb;
+  if(!fb||!fb.ready){ toast('Firebase 미연결','error'); return; }
+  toast('새로고침 중...','info');
+  fb.get(fb.ref(fb.db,'ky_orders')).then(snap=>{
+    if(!snap.exists()){ kyAllOrders=[]; kyRenderOrders([]); kyUpdateKpi([]); return; }
+    kyAllOrders = Object.values(snap.val()).sort((a,b)=>b.createdAt.localeCompare(a.createdAt));
+    kyUpdateDealerFilter();
+    kyApplyFilter();
+    kyUpdateKpi(kyAllOrders);
+    toast('완료','success');
+  }).catch(e=>toast('실패: '+e.message,'error'));
+}
+
+function kyUpdateKpi(list){
+  const mo = ym(today());
+  document.getElementById('kyKpiTotal').textContent = fmt(list.length);
+  document.getElementById('kyKpiPending').textContent = fmt(list.filter(o=>o.status==='pending').length);
+  document.getElementById('kyKpiAccepted').textContent = fmt(list.filter(o=>o.status==='accepted').length);
+  const moAmt = list.filter(o=>o.orderDate&&o.orderDate.startsWith(mo)).reduce((s,o)=>s+(o.total||0),0);
+  document.getElementById('kyKpiAmt').textContent = fmt(moAmt);
+}
+
+function kyUpdateDealerFilter(){
+  const sel = document.getElementById('kyFDealer');
+  const cur = sel.value;
+  const dealers = [...new Set(kyAllOrders.map(o=>o.dealerName))].sort();
+  sel.innerHTML = '<option value="">전체 대리점</option>' +
+    dealers.map(d=>`<option value="${d}" ${d===cur?'selected':''}>${d}</option>`).join('');
+}
+
+function kyApplyFilter(){
+  const status = document.getElementById('kyFStatus').value;
+  const dealer = document.getElementById('kyFDealer').value;
+  const from = document.getElementById('kyFFrom').value;
+  const to = document.getElementById('kyFTo').value;
+  let list = [...kyAllOrders];
+  if(status) list = list.filter(o=>o.status===status);
+  if(dealer) list = list.filter(o=>o.dealerName===dealer);
+  if(from) list = list.filter(o=>o.orderDate>=from);
+  if(to) list = list.filter(o=>o.orderDate<=to);
+  kyFilteredOrders = list;
+  kyRenderOrders(list);
+  document.getElementById('kyOrderCount').textContent = list.length+'건';
+}
+
+function kyResetFilter(){
+  ['kyFStatus','kyFDealer','kyFFrom','kyFTo'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+  kyApplyFilter();
+}
+
+const kyStatusMap = {
+  pending: {label:'대기중',cls:'pending'},
+  accepted:{label:'접수완료',cls:'accepted'},
+  rejected:{label:'거절됨',cls:'rejected'},
+  shipped: {label:'출고완료',cls:'shipped'}
+};
+
+function kyRenderOrders(list){
+  const el = document.getElementById('kyOrdersList');
+  if(!list.length){
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><p>주문이 없습니다</p></div>';
+    return;
+  }
+  const statusColors = {pending:'#d97706',accepted:'#16a34a',rejected:'#dc2626',shipped:'#2563eb'};
+  const statusBg = {pending:'#fffbeb',accepted:'#f0fdf4',rejected:'#fef2f2',shipped:'#eff6ff'};
+  el.innerHTML = list.map(o => {
+    const s = kyStatusMap[o.status]||{label:o.status,cls:'pending'};
+    const isNew = o.status==='pending';
+    const sc = statusColors[o.status]||'#888';
+    const sb = statusBg[o.status]||'#f3f4f6';
+    const chips = (o.items||[]).map(i=>
+      `<span style="background:var(--ky-bg,#fffbeb);border:1px solid #fde68a;border-radius:8px;padding:4px 10px;font-size:.75rem;font-weight:700;color:#b45309">📦 ${i.product} ${fmt(i.qty)}개 · ${fmt(i.total)}원</span>`
+    ).join('');
+    const ct = o.createdAt ? new Date(o.createdAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    return `<div style="background:#fff;border:${isNew?'1.5px solid var(--yellow)':'1px solid var(--border)'};${isNew?'border-left:4px solid var(--yellow)':''};border-radius:10px;padding:16px;margin-bottom:10px;box-shadow:var(--shadow-sm)">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
+        <div>
+          <div style="font-size:.95rem;font-weight:700">${o.dealerName}${isNew?'<span style="margin-left:8px;background:#ef4444;color:#fff;padding:2px 6px;border-radius:8px;font-size:.58rem">NEW</span>':''}</div>
+          <div style="font-size:.7rem;color:var(--text3);font-family:monospace;margin-top:2px">${o.id||''} · ${o.orderDate||''} ${ct}</div>
+        </div>
+        <span style="background:${sb};color:${sc};padding:3px 10px;border-radius:20px;font-size:.68rem;font-weight:700">${s.label}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${chips}</div>
+      ${o.memo?`<div style="font-size:.78rem;color:var(--text2);background:var(--surface2);border-radius:6px;padding:7px 10px;margin-bottom:10px;border-left:3px solid #fde68a">💬 ${o.memo}</div>`:''}
+      ${o.statusNote?`<div style="font-size:.78rem;color:var(--text2);background:var(--surface2);border-radius:6px;padding:7px 10px;margin-bottom:10px;border-left:3px solid var(--yellow)">📝 관리자메모: ${o.statusNote}${o.processedBy?` (${o.processedBy})`:''}</div>`:''}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding-top:10px;border-top:1px solid var(--border)">
+        ${o.status==='pending'?`
+          <button class="btn btn-success btn-xs" onclick="kyOpenAction('${o.id}','accepted')">✅ 접수</button>
+          <button class="btn btn-danger btn-xs" onclick="kyOpenAction('${o.id}','rejected')">❌ 거절</button>
+          <button class="btn btn-outline btn-xs" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고</button>
+        `:o.status==='accepted'?`
+          <button class="btn btn-outline btn-xs" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고처리</button>
+          <button class="btn btn-ghost btn-xs" onclick="kyOpenAction('${o.id}','pending')">↩ 대기로</button>
+        `:`
+          <button class="btn btn-ghost btn-xs" onclick="kyOpenAction('${o.id}','pending')">↩ 대기로 되돌리기</button>
+        `}
+        <span style="margin-left:auto;font-family:monospace;font-size:.9rem;font-weight:800;color:var(--yellow)">${fmt(o.total)}원</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function kyOpenAction(orderId, targetStatus){
+  const o = kyAllOrders.find(x=>x.id===orderId);
+  if(!o) return;
+  _kyDetailId = orderId;
+  const labels={accepted:'접수 완료 처리',rejected:'주문 거절 처리',shipped:'출고 완료 처리',pending:'대기중으로 되돌리기'};
+  const colors={accepted:'var(--green)',rejected:'var(--red)',shipped:'var(--blue)',pending:'var(--gray)'};
+  const rows = (o.items||[]).map(i=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:.85rem"><span>${i.product}</span><span style="font-weight:700">${fmt(i.qty)}개 · ${fmt(i.total)}원</span></div>`).join('');
+  document.getElementById('kyDetailContent').innerHTML = `
+    <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:.85rem"><span>대리점</span><span style="font-weight:700">${o.dealerName}</span></div>
+    <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:.85rem"><span>주문일</span><span>${o.orderDate||''}</span></div>
+    ${rows}
+    ${o.memo?`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:.82rem"><span>메모</span><span>${o.memo}</span></div>`:''}
+    <div style="display:flex;justify-content:space-between;padding:10px 0 0;font-weight:800;font-size:.88rem"><span>합계</span><span style="color:var(--yellow)">${fmt(o.total)}원</span></div>`;
+  document.getElementById('kyActionArea').innerHTML = `
+    <div style="font-weight:700;margin-bottom:8px;color:${colors[targetStatus]||'var(--text)'}">→ ${labels[targetStatus]||targetStatus}</div>
+    <textarea id="kyActionNote" placeholder="대리점에 전달할 메모 (선택)..." style="width:100%;background:var(--gray-light);border:1.5px solid var(--border);border-radius:6px;padding:10px;font-family:inherit;font-size:.85rem;min-height:70px;resize:vertical;outline:none;margin-bottom:8px">${o.statusNote||''}</textarea>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-ghost" style="flex:1" onclick="kyCloseDetail()">취소</button>
+      <button class="btn btn-primary" style="flex:2;background:${colors[targetStatus]||'var(--blue)'};border-color:${colors[targetStatus]||'var(--blue)'}" onclick="kyConfirmAction('${orderId}','${targetStatus}')">확인</button>
+    </div>`;
+  const modal = document.getElementById('kyDetailModal');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+async function kyConfirmAction(orderId, targetStatus){
+  const fb = window._fb;
+  if(!fb||!fb.ready){ toast('Firebase 미연결','error'); return; }
+  const note = (document.getElementById('kyActionNote').value||'').trim();
+  const o = kyAllOrders.find(x=>x.id===orderId);
+  if(!o){ toast('주문을 찾을 수 없습니다','error'); return; }
+  try{
+    const updated = {...o, status:targetStatus, statusNote:note, statusUpdatedAt:new Date().toISOString(), processedBy: window._amtAdminName || '─'};
+    await fb.set(fb.ref(fb.db,'ky_orders/'+orderId), updated);
+    const lbl={accepted:'접수완료',rejected:'거절됨',shipped:'출고완료',pending:'대기중'};
+    toast('✅ '+o.dealerName+' → '+(lbl[targetStatus]||targetStatus),'success');
+    kyCloseDetail();
+  }catch(e){ toast('❌ 처리 실패: '+e.message,'error'); }
+}
+
+function kyCloseDetail(){
+  document.getElementById('kyDetailModal').style.display = 'none';
+  document.body.style.overflow = '';
+  _kyDetailId = null;
+}
+
 /* ═══ RESPONSIVE: 모바일 2컬럼 보정 ═══ */
 function handleResize(){
   const w=window.innerWidth;
@@ -5312,8 +5665,195 @@ document.addEventListener('visibilitychange',()=>{
   }
 });
 
+
+/* ═══════════════════════════════════════════════════════
+   관리자 코드 / 대리점 코드 관리
+═══════════════════════════════════════════════════════ */
+
+// ── 관리자 코드 관리 ──
+async function loadAdminCodes(){
+  const fb = window._fb;
+  if(!fb||!fb.ready){ alert('Firebase 미연결'); return; }
+  const snap = await fb.get(fb.ref(fb.db,'amt_pw'));
+  const data = snap.exists() ? snap.val() : {};
+  renderAdminCodeList(data);
+}
+
+function renderAdminCodeList(data){
+  const wrap = document.getElementById('adminCodeListWrap');
+  if(!wrap) return;
+  const entries = Object.entries(data);
+  if(!entries.length){
+    wrap.innerHTML = '<div style="font-size:.8rem;color:#888;padding:8px">등록된 관리자가 없습니다.</div>';
+    return;
+  }
+  wrap.innerHTML = entries.map(([name, code]) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="flex:1;font-weight:700;font-size:.88rem">${name}</span>
+      <input type="text" id="acode_${name}" value="${code}"
+        style="width:90px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-family:monospace;font-size:.9rem;font-weight:700;text-align:center">
+      <button class="btn btn-primary btn-xs" onclick="saveOneAdminCode('${name}')">저장</button>
+      <button class="btn btn-danger btn-xs" onclick="deleteAdminCode('${name}')">삭제</button>
+    </div>
+  `).join('');
+}
+
+async function saveOneAdminCode(name){
+  const fb = window._fb;
+  if(!fb||!fb.ready){ alert('Firebase 미연결'); return; }
+  const newCode = (document.getElementById('acode_'+name).value||'').trim();
+  if(!newCode){ alert('코드를 입력하세요'); return; }
+  await fb.set(fb.ref(fb.db,'amt_pw/'+name), newCode);
+  toast('✅ '+name+' 코드 저장됨','success');
+}
+
+async function deleteAdminCode(name){
+  if(!confirm(name+' 관리자를 삭제하시겠습니까?')) return;
+  const fb = window._fb;
+  if(!fb||!fb.ready){ alert('Firebase 미연결'); return; }
+  await fb.set(fb.ref(fb.db,'amt_pw/'+name), null);
+  toast(name+' 삭제됨','info');
+  loadAdminCodes();
+}
+
+async function addAdminCode(){
+  const name = (document.getElementById('newAdminName').value||'').trim();
+  const code = (document.getElementById('newAdminCode').value||'').trim();
+  if(!name||!code){ alert('이름과 코드를 모두 입력하세요'); return; }
+  const fb = window._fb;
+  if(!fb||!fb.ready){ alert('Firebase 미연결'); return; }
+  await fb.set(fb.ref(fb.db,'amt_pw/'+name), code);
+  document.getElementById('newAdminName').value='';
+  document.getElementById('newAdminCode').value='';
+  toast('✅ '+name+' 추가됨','success');
+  loadAdminCodes();
+}
+
+// ── 대리점 코드 관리 ──
+function loadDealerCodes(){
+  const fb = window._fb;
+  if(!fb||!fb.ready){
+    // 로컬 데이터 사용
+    const d = (window.dealers||[]);
+    renderDealerCodeList(d);
+    return;
+  }
+  fb.get(fb.ref(fb.db,'amt_data')).then(snap=>{
+    if(!snap.exists()){ renderDealerCodeList([]); return; }
+    const d = snap.val().dealers||[];
+    renderDealerCodeList(d);
+  });
+}
+
+function renderDealerCodeList(dealers){
+  const wrap = document.getElementById('dealerCodeListWrap');
+  if(!wrap) return;
+  if(!dealers.length){
+    wrap.innerHTML = '<div style="font-size:.8rem;color:#888;padding:8px">등록된 대리점이 없습니다.</div>';
+    return;
+  }
+  wrap.innerHTML = dealers.map((d,i) => `
+    <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="flex:1;font-weight:700;font-size:.88rem">${d.name}</span>
+      <input type="text" id="dcode_${i}" value="${d.code||d.id||''}"
+        style="width:90px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-family:monospace;font-size:.9rem;font-weight:700;text-align:center">
+      <button class="btn btn-primary btn-xs" onclick="saveDealerCode(${i},'${d.id}')">저장</button>
+    </div>
+  `).join('');
+}
+
+async function saveDealerCode(idx, dealerId){
+  const fb = window._fb;
+  if(!fb||!fb.ready){ alert('Firebase 미연결'); return; }
+  const newCode = (document.getElementById('dcode_'+idx).value||'').trim();
+  if(!newCode){ alert('코드를 입력하세요'); return; }
+
+  const snap = await fb.get(fb.ref(fb.db,'amt_data'));
+  if(!snap.exists()){ alert('데이터 없음'); return; }
+  const data = snap.val();
+  const dealers = data.dealers||[];
+  const di = dealers.findIndex(d=>d.id===dealerId);
+  if(di<0){ alert('대리점을 찾을 수 없습니다'); return; }
+  dealers[di].code = newCode;
+  await fb.set(fb.ref(fb.db,'amt_data/dealers'), dealers);
+  toast('✅ '+dealers[di].name+' 코드 → '+newCode,'success');
+}
+
+// ── 코드 모를 때 승인 요청 메일 ──
+function requestCodeChange(type){
+  const subject = encodeURIComponent('[AMT] '+type+' 코드 변경 요청');
+  const body = encodeURIComponent(
+    type + ' 코드 변경을 요청합니다.\n\n' +
+    '요청자: \n' +
+    '변경 대상: \n' +
+    '사유: \n\n' +
+    '── 자동 생성 ──\n' +
+    '요청 시각: ' + new Date().toLocaleString('ko-KR') + '\n' +
+    '기기: ' + navigator.userAgent.substring(0,60)
+  );
+  window.open('mailto:amedtech@gmail.com?subject='+subject+'&body='+body);
+}
+
+/* ═══════════════════════════════════════════════════════
+   AMT 관리자 로그인
+═══════════════════════════════════════════════════════ */
+const AMT_ADMIN_SESSION = 'amt_admin_session';
+
+async function doAmtLogin(){
+  const code = (document.getElementById('amtAdminCodeInput').value||'').trim();
+  if(!code){ document.getElementById('amtLoginMsg').textContent='코드를 입력하세요.'; return; }
+
+  const fb = window._fb;
+  let pwData = {};
+
+  if(fb && fb.ready){
+    try{
+      const snap = await fb.get(fb.ref(fb.db,'amt_pw'));
+      if(snap.exists()) pwData = snap.val();
+    }catch(e){}
+  }
+  // fallback: localStorage
+  if(!Object.keys(pwData).length){
+    try{ Object.assign(pwData, JSON.parse(localStorage.getItem('amt_pw')||'{}')); }catch(e){}
+  }
+
+  const matched = Object.entries(pwData).find(([name,pw]) => String(pw) === String(code));
+  if(!matched){
+    document.getElementById('amtLoginMsg').textContent = '❌ 코드가 틀렸습니다.';
+    return;
+  }
+
+  setAmtAdminSession(matched[0]);
+  document.getElementById('amtLoginScreen').style.display = 'none';
+}
+
+function setAmtAdminSession(name){
+  sessionStorage.setItem(AMT_ADMIN_SESSION, name);
+  window._amtAdminName = name;
+  const badge = document.getElementById('amtAdminBadge');
+  if(badge) badge.textContent = '👤 '+name;
+}
+
+function amtAdminLogout(){
+  if(!confirm(window._amtAdminName + '님 로그아웃 하시겠습니까?')) return;
+  sessionStorage.removeItem(AMT_ADMIN_SESSION);
+  window._amtAdminName = null;
+  document.getElementById('amtLoginScreen').style.display = 'flex';
+  document.getElementById('amtAdminCodeInput').value = '';
+  document.getElementById('amtLoginMsg').textContent = '';
+}
+
 // START
-window.addEventListener('DOMContentLoaded',()=>{ init(); handleResize(); });
+window.addEventListener('DOMContentLoaded',()=>{
+  // 세션 복원
+  const saved = sessionStorage.getItem(AMT_ADMIN_SESSION);
+  if(saved){
+    setAmtAdminSession(saved);
+  } else {
+    document.getElementById('amtLoginScreen').style.display = 'flex';
+  }
+  init(); handleResize();
+});
 
 // PWA Service Worker 등록 (github.io 배포 환경에서만)
 if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
