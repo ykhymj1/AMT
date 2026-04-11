@@ -1025,6 +1025,31 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
         </div>
       </div>
     </div>
+
+    <!-- ★ 채무조정 이력 -->
+    <div class="card" style="margin-top:14px">
+      <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title"><div class="card-title-dot" style="background:var(--yellow)"></div>채무조정 이력</div>
+        <button class="btn btn-ghost btn-sm" onclick="renderAdjHistory()">🔄 새로고침</button>
+      </div>
+      <!-- 필터 -->
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;align-items:flex-end">
+        <div class="filter-group">
+          <label>회사</label>
+          <select id="adjHistFilterPair" onchange="renderAdjHistory()" style="min-width:140px">
+            <option value="">전체</option>
+            <option value="AMT_KY">AMT ↔ KY</option>
+            <option value="AMT_BEST">AMT ↔ BEST</option>
+            <option value="KY_BEST">KY ↔ BEST</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>기간(월)</label>
+          <input type="month" id="adjHistFilterM" onchange="renderAdjHistory()">
+        </div>
+      </div>
+      <div id="adjHistoryList"></div>
+    </div>
   </div>
 
   <!-- 기존 AMT→KY 물품거래 이력 탭 -->
@@ -3256,6 +3281,106 @@ function txTab(name, btn){
   if(name==='tx') renderTxList();
   if(name==='best'){ renderBestReturnList(); }
   if(name==='history') renderInternalList();
+  if(name==='adjust') renderAdjHistory(); // ★ 채무조정 탭 열 때 이력 자동 렌더
+}
+
+/* ═══════════════════════════════════════════════════════
+   ★ 채무조정 이력 렌더링
+═══════════════════════════════════════════════════════ */
+function renderAdjHistory(){
+  const el = document.getElementById('adjHistoryList');
+  if(!el) return;
+
+  const pairFilter = (document.getElementById('adjHistFilterPair')||{}).value||'';
+  const moFilter   = (document.getElementById('adjHistFilterM')||{}).value||'';
+
+  // txLogs에서 adj_ 타입만 추출
+  let list = txLogs.filter(t => t.type.startsWith('adj_'));
+
+  if(pairFilter){
+    // AMT_KY → adj_AMT_KY
+    list = list.filter(t => t.type === 'adj_' + pairFilter);
+  }
+  if(moFilter){
+    list = list.filter(t => (t.date||'').startsWith(moFilter));
+  }
+
+  list = list.sort((a,b) => b.date.localeCompare(a.date)||(b.createdAt||'').localeCompare(a.createdAt||''));
+
+  if(!list.length){
+    el.innerHTML = emptyHtml('채무조정 이력이 없습니다');
+    return;
+  }
+
+  const pairColors = {
+    'adj_AMT_KY':  {bg:'var(--ky-bg,#fffbeb)',  color:'var(--ky,#d97706)',  label:'AMT ↔ KY'},
+    'adj_AMT_BEST':{bg:'var(--best-bg,#ecfdf5)', color:'var(--best,#059669)', label:'AMT ↔ BEST'},
+    'adj_KY_BEST': {bg:'var(--ky-bg,#fffbeb)',  color:'var(--ky,#d97706)',  label:'KY ↔ BEST'},
+  };
+
+  const grandTotal = list.reduce((s,t) => s + Math.abs(t.adjAmt||0), 0);
+
+  el.innerHTML = `
+    <div style="padding:8px 12px;background:var(--surface2);border-radius:6px;margin-bottom:10px;font-size:.82rem;display:flex;gap:16px;flex-wrap:wrap">
+      <span>총 <b>${list.length}건</b></span>
+      <span>조정 합계 <b>${fmt(grandTotal)}원</b></span>
+    </div>
+    <div class="table-wrap"><table>
+      <thead>
+        <tr>
+          <th>날짜</th>
+          <th>구분</th>
+          <th class="td-r">조정금액</th>
+          <th>메모</th>
+          <th>등록일시</th>
+          <th class="td-c">삭제</th>
+        </tr>
+      </thead>
+      <tbody>
+      ${list.map(t => {
+        const pc = pairColors[t.type] || {bg:'#f3f4f6', color:'#6b7280', label: t.type};
+        const adjAmt = t.adjAmt !== undefined ? t.adjAmt : 0;
+        const amtColor = adjAmt >= 0 ? 'var(--blue,#2563eb)' : 'var(--red,#dc2626)';
+        const amtSign  = adjAmt >= 0 ? '+' : '';
+        const createdAt = t.createdAt
+          ? new Date(t.createdAt).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})
+          : '-';
+        return `<tr>
+          <td class="td-mono" style="white-space:nowrap">${t.date}</td>
+          <td>
+            <span style="background:${pc.bg};color:${pc.color};padding:2px 8px;border-radius:10px;font-size:.68rem;font-weight:700;white-space:nowrap">
+              ${pc.label}
+            </span>
+          </td>
+          <td class="td-mono td-r" style="color:${amtColor};font-weight:700;white-space:nowrap">
+            ${amtSign}${fmt(Math.abs(adjAmt))}원
+          </td>
+          <td style="font-size:.75rem;color:var(--text2);max-width:120px;overflow:hidden;text-overflow:ellipsis">${t.memo||''}</td>
+          <td class="td-mono" style="font-size:.72rem;color:var(--text3);white-space:nowrap">${createdAt}</td>
+          <td class="td-c">
+            <button class="btn btn-danger btn-xs" onclick="deleteAdjEntry('${t.id}')">✕</button>
+          </td>
+        </tr>`;
+      }).join('')}
+      </tbody>
+    </table></div>`;
+}
+
+// ★ 채무조정 개별 삭제 (OTP 필요)
+async function deleteAdjEntry(id){
+  const t = txLogs.find(x => x.id === id);
+  if(!t){ toast('항목을 찾을 수 없습니다','error'); return; }
+  if(!confirm(`이 채무조정 항목을 삭제할까요?\n\n${txTypeLabel(t.type)}\n금액: ${fmt(t.adjAmt||0)}원\n날짜: ${t.date}`)) return;
+
+  await requireOtp(`채무조정 삭제 (${txTypeLabel(t.type)} ${fmt(Math.abs(t.adjAmt||0))}원)`, async () => {
+    addAuditLog('delete','채권채무',`채무조정 삭제: ${txTypeLabel(t.type)} ${fmt(t.adjAmt||0)}원 (${t.date})`, t);
+    txLogs = txLogs.filter(x => x.id !== id);
+    saveLS(); await fbSaveAll();
+    toast('채무조정 삭제 완료','info');
+    renderDebtSummary();
+    renderAdjHistory();
+    renderTxList();
+  });
 }
 
 // 거래 유형 레이블
@@ -3554,7 +3679,16 @@ async function deleteTx(id){
   if(!confirm('이 거래를 삭제할까요?')) return;
   const t=txLogs.find(x=>x.id===id);
   if(!t) return;
-  addAuditLog('delete','채권채무',`삭제: ${txTypeLabel(t.type)} ${fmt(t.amount)}원 (${t.date})`,t);
+  // ★ OTP 확인 후 삭제 실행
+  await requireOtp(`거래 삭제 (${txTypeLabel(t.type)} ${fmt(t.amount||t.adjAmt||0)}원)`, async () => {
+    await _doDeleteTx(id);
+  });
+}
+
+async function _doDeleteTx(id){
+  const t=txLogs.find(x=>x.id===id);
+  if(!t) return;
+  addAuditLog('delete','채권채무',`삭제: ${txTypeLabel(t.type)} ${fmt(t.amount||0)}원 (${t.date})`,t);
   txLogs=txLogs.filter(x=>x.id!==id);
   // AMT_to_KY: relInternal로 연결된 재고이력·내부거래도 함께 삭제
   if(t.type==='AMT_to_KY' && t.relInternal){
@@ -3565,7 +3699,6 @@ async function deleteTx(id){
   }
   saveLS(); await fbSaveAll();
   toast('삭제 완료','info');
-  // 재고·대시보드 화면도 갱신
   renderDebtSummary(); renderTxList(); renderInvCards(); renderInvHistory(); renderDash();
 }
 
@@ -3632,11 +3765,22 @@ async function saveTxEdit(){
   if(!t){ toast('거래를 찾을 수 없습니다','error'); return; }
 
   const newDate = document.getElementById('txEditDate').value;
+  if(!newDate){ toast('날짜를 입력하세요','error'); return; }
+
+  // ★ OTP 확인 후 수정 실행
+  await requireOtp(`거래 수정 (${txTypeLabel(t.type)})`, async () => {
+    await _doSaveTxEdit(_editTxId);
+  });
+}
+
+async function _doSaveTxEdit(editId){
+  const t=txLogs.find(x=>x.id===editId);
+  if(!t){ toast('거래를 찾을 수 없습니다','error'); return; }
+
+  const newDate = document.getElementById('txEditDate').value;
   const newMemo = document.getElementById('txEditMemo').value;
   const isAdj = t.type.startsWith('adj_');
   const isSupply = t.type==='AMT_to_KY' && t.relInternal;
-
-  if(!newDate){ toast('날짜를 입력하세요','error'); return; }
 
   // ── 조정 거래 ──
   if(isAdj){
@@ -3660,7 +3804,6 @@ async function saveTxEdit(){
 
     const oldProduct=it.product, oldQty=it.qty, oldDate=it.date;
 
-    // 기존 재고 로그 제거 후 새로 생성
     invLogs = invLogs.filter(i=>i.relInternal!==itId);
     const ts=new Date().toISOString();
     invLogs.push({id:'inv_'+Date.now()+'_a', date:newDate, product:newProduct, qty:-newQty, type:'out',
@@ -3668,13 +3811,10 @@ async function saveTxEdit(){
     invLogs.push({id:'inv_'+(Date.now()+1)+'_k', date:newDate, product:newProduct, qty:newQty, type:'in',
       company:'KY', memo:'내부공급←AMT (수정)', relInternal:itId, createdAt:ts});
 
-    // internalTrades 업데이트
     it.date=newDate; it.product=newProduct; it.qty=newQty; it.price=newPrice; it.total=newTotal; it.memo=newMemo;
 
-    // txLog 업데이트
     addAuditLog('edit','채권채무',`거래수정: AMT→KY ${oldProduct} ${fmt(oldQty)}개 → ${newProduct} ${fmt(newQty)}개 (날짜:${oldDate}→${newDate})`);
     t.date=newDate; t.amount=newTotal; t.memo=newProduct+' '+fmt(newQty)+'개'+(newMemo?' ('+newMemo+')':'');
-    // 단가 기억
     internalPrices[newProduct]=newPrice;
     localStorage.setItem(LS_INT_PRICES, JSON.stringify(internalPrices));
 
@@ -3716,6 +3856,7 @@ async function _doSaveDebtAdj(compA, compB){
   toast(`${compA}↔${compB} 조정 저장 완료!`,'success');
   amtEl.value='';
   renderDebtSummary();
+  renderAdjHistory(); // ★ 저장 후 이력 자동 갱신
 }
 
 // BEST 반품
@@ -4808,7 +4949,7 @@ function showClearOtpModal(){
     <div style="background:#fff;border-radius:14px;padding:26px;min-width:320px;max-width:400px;width:100%;box-shadow:0 10px 40px rgba(0,0,0,.22)">
       <div style="font-size:1.05rem;font-weight:800;color:#dc2626;margin-bottom:6px">🗑️ 전체 초기화 인증</div>
       <div style="font-size:.8rem;color:#6b7280;margin-bottom:18px;line-height:1.6">
-        보안을 위해 <b>amedtech@gmail.com</b> 으로<br>
+        보안을 위해 총관리자 <b>텔레그램</b>으로<br>
         OTP 인증코드를 발송합니다.<br>
         코드 유효시간: <b>5분</b>
       </div>
@@ -4885,10 +5026,8 @@ function _showOtpFallback(code, msgEl){
   const step2 = document.getElementById('otpStep2');
   if(step2) step2.style.display='block';
   if(msgEl){
-    msgEl.innerHTML = `⚠️ 자동발송 실패. 아래 링크를 클릭하거나<br>코드를 수동으로 확인하세요.<br>
-      <a href="mailto:amedtech@gmail.com?subject=전체초기화+OTP&body=인증코드:+${code}++(유효시간+5분)"
-        target="_blank"
-        style="color:#2563eb;font-weight:700;font-size:.82rem">📧 mailto로 직접 보내기</a><br>
+    msgEl.innerHTML = `⚠️ 텔레그램 발송 실패.<br>
+      아래 코드를 총관리자에게 직접 전달하세요.<br>
       <span style="font-size:.85rem;font-weight:800;color:#dc2626;letter-spacing:4px;display:block;margin-top:6px">${code}</span>
       <span style="font-size:.68rem;color:#9ca3af">(위 코드를 아래에 입력하세요)</span>`;
     msgEl.style.color='#d97706';
@@ -4896,23 +5035,24 @@ function _showOtpFallback(code, msgEl){
 }
 
 async function _sendOtpEmail(code){
-  // EmailJS 무료 공개키 방식 시도
-  // 실제 동작을 위해서는 EmailJS 계정 설정 필요
-  // 여기서는 fetch를 통한 간단한 폼 서비스 시도
-  try {
-    // formsubmit.co 무료 서비스 사용 (설정 불필요)
-    const res = await fetch('https://formsubmit.co/ajax/amedtech@gmail.com', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify({
-        _subject: '[AMT 관리시스템] 전체초기화 OTP 인증코드',
-        message: `전체 초기화 인증코드: ${code}\n\n유효시간: 5분\n\n이 코드를 요청하지 않았다면 무시하세요.`,
-        _captcha: 'false'
-      })
+  // 전체초기화 OTP → 텔레그램 발송
+  try{
+    const now = new Date().toLocaleString('ko-KR',{
+      year:'numeric',month:'2-digit',day:'2-digit',
+      hour:'2-digit',minute:'2-digit',second:'2-digit'
     });
-    const data = await res.json();
-    return data.success === 'true' || data.success === true;
-  } catch(e) {
+    const lines = [
+      '🔐 <b>전체초기화 OTP 인증코드</b>',
+      '',
+      '🔑 코드: <b>' + code + '</b>',
+      '⏰ 유효시간: 5분',
+      '🕐 요청시각: ' + now,
+      '',
+      '⚠️ 전체 데이터 초기화 요청입니다.'
+    ];
+    await sendTelegram(SUPER_ADMIN_CHAT_ID, lines.join('\n'));
+    return true;
+  } catch(e){
     return false;
   }
 }
@@ -5726,10 +5866,15 @@ async function kyConfirmAction(orderId, targetStatus){
       read: false
     });
 
+    // ★ 텔레그램 주문상태 알림 (총관리자)
+    sendTelegramOrderStatus(o, targetStatus, note, now).catch(()=>{});
+
     toast('✅ '+o.dealerName+' → '+(lbl[targetStatus]||targetStatus),'success');
     kyCloseDetail();
   }catch(e){ toast('❌ 처리 실패: '+e.message,'error'); }
 }
+
+
 
 // ★ AMT 내 KY주문 출고 시 자동 업데이트
 async function kyAutoUpdateOnShipped(order, note, now){
@@ -6021,8 +6166,92 @@ async function requireOtp(actionLabel, callback){
     }catch(e){ console.warn('OTP 저장 실패', e); }
   }
 
+  // ★ 텔레그램으로 OTP 발송 (총관리자)
+  sendTelegramOtp(otp6, actionLabel, window._amtAdminName || '알 수 없음').catch(()=>{});
+
   // OTP 입력 모달 표시 (총관리자에게 코드 받아서 입력)
   showOtpModal(reqId, actionLabel, otp6);
+}
+
+/* ═══════════════════════════════════════════════════════
+   ★ 텔레그램 알림 시스템
+   설정 방법:
+   1. 텔레그램에서 @BotFather 검색 → /newbot → 봇 이름 입력 → 토큰 복사
+   2. 봇에게 /start 메시지 전송 후
+      https://api.telegram.org/bot{토큰}/getUpdates 접속 → chat.id 확인
+   3. 아래 TELEGRAM_BOT_TOKEN, SUPER_ADMIN_CHAT_ID 에 입력
+═══════════════════════════════════════════════════════ */
+const TELEGRAM_BOT_TOKEN  = '8615303756:AAEWCz82f6LBzgBx769v1xbUkJ6SOM7rpjk';  // KY 주문 봇
+const SUPER_ADMIN_CHAT_ID = '1988388217';  // 총관리자 채팅 ID
+// 나중에 추가할 관리자 채팅 ID (현재 미사용)
+// const ADMIN2_CHAT_ID = '';
+// const ADMIN3_CHAT_ID = '';
+
+/* 텔레그램 메시지 전송 공통 함수 */
+async function sendTelegram(chatId, text){
+  if(!TELEGRAM_BOT_TOKEN || !chatId){
+    console.warn('[텔레그램] 봇 토큰 또는 채팅 ID 미설정');
+    return;
+  }
+  try{
+    const res = await fetch('https://api.telegram.org/bot' + TELEGRAM_BOT_TOKEN + '/sendMessage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: text, parse_mode: 'HTML' })
+    });
+    const data = await res.json();
+    if(!data.ok) console.warn('[텔레그램] 발송 실패:', data.description);
+    else console.log('[텔레그램] 발송 완료 → chat_id:', chatId);
+  } catch(e){
+    console.warn('[텔레그램] 오류:', e.message);
+  }
+}
+
+/* OTP → 총관리자 텔레그램 */
+async function sendTelegramOtp(otp6, actionLabel, requestedBy){
+  const now = new Date().toLocaleString('ko-KR', {
+    year:'numeric', month:'2-digit', day:'2-digit',
+    hour:'2-digit', minute:'2-digit', second:'2-digit'
+  });
+  const lines = [
+    '🔐 <b>OTP 승인 요청</b>',
+    '',
+    '📋 작업: <b>' + actionLabel + '</b>',
+    '👤 요청자: ' + requestedBy,
+    '🔑 OTP 코드: <b>' + otp6 + '</b>',
+    '⏰ 유효시간: 10분',
+    '🕐 요청시각: ' + now,
+    '',
+    '이 코드를 요청자에게 알려주세요.'
+  ];
+  await sendTelegram(SUPER_ADMIN_CHAT_ID, lines.join('\n'));
+}
+
+/* 주문 상태변경 → 총관리자 텔레그램 (AMT 내 처리) */
+async function sendTelegramOrderStatus(order, targetStatus, note, nowIso){
+  const statusEmoji = {accepted:'✅', shipped:'🚚', pending:'⏳'};
+  const statusLabel = {accepted:'접수완료', shipped:'출고완료', pending:'대기중'};
+  const nowStr = new Date(nowIso).toLocaleString('ko-KR', {
+    month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit'
+  });
+  const itemLines = (order.items||[]).map(function(i){
+    return '  • ' + i.product + ' ' + i.qty + '개 × ' + fmt(i.price) + '원';
+  });
+  const lines = [
+    (statusEmoji[targetStatus]||'📦') + ' <b>KY주문 ' + (statusLabel[targetStatus]||targetStatus) + '</b>',
+    '',
+    '🏢 대리점: <b>' + order.dealerName + '</b>',
+    '📦 주문번호: ' + order.id,
+    '📅 주문일: ' + (order.orderDate||''),
+    '',
+    '<b>주문 상품:</b>'
+  ].concat(itemLines).concat([
+    '',
+    '💰 합계: <b>' + fmt(order.total) + '원</b>',
+    note ? '📝 메모: ' + note : '',
+    '🕐 처리: ' + nowStr + ' / ' + (window._amtAdminName||'─')
+  ]).filter(function(l){ return l !== undefined; });
+  await sendTelegram(SUPER_ADMIN_CHAT_ID, lines.join('\n'));
 }
 
 function showOtpModal(reqId, actionLabel, debugOtp){
@@ -6041,6 +6270,7 @@ function showOtpModal(reqId, actionLabel, debugOtp){
       </div>
       <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:.78rem;color:#1e40af">
         📱 총관리자 앱에 OTP 알림이 발송되었습니다.<br>
+        ✈️ 총관리자 텔레그램으로도 OTP가 발송되었습니다.<br>
         <span style="font-size:.72rem;color:#6b7280">유효시간: 10분</span>
       </div>
       <label style="font-size:.8rem;font-weight:700;display:block;margin-bottom:6px">OTP 코드 (6자리)</label>
@@ -6329,8 +6559,8 @@ window.addEventListener('DOMContentLoaded',()=>{
 if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
   window.addEventListener('load',()=>{
     navigator.serviceWorker.register('/AMT/sw.js')
-      .then(r=>console.log('SW registered:',r.scope))
-      .catch(e=>console.warn('SW failed:',e));
+      .then(r=>console.log('[AMT SW] 등록 완료:', r.scope))
+      .catch(e=>console.log('[AMT SW] 등록 스킵:', e.message));
   });
 }
 </script>
