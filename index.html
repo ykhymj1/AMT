@@ -1328,7 +1328,6 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
         <option value="pending">대기중</option>
         <option value="accepted">접수완료</option>
         <option value="shipped">출고완료</option>
-        <option value="received">입고완료(반품)</option>
       </select>
       <select id="kyFDealer" onchange="kyApplyFilter()" style="flex:1;min-width:110px">
         <option value="">전체 대리점</option>
@@ -1505,8 +1504,11 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
     <hr class="divider">
     <div class="setting-section">
       <h3>👤 관리자 코드 관리</h3>
+      <div id="adminCodeSuperNote" style="display:none;background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:.78rem;color:#713f12">
+        🔑 총관리자 전용 — 모든 관리자 코드를 확인하고 수정할 수 있습니다.
+      </div>
       <p style="font-size:.78rem;color:var(--text2);margin-bottom:12px">
-        현재 로그인된 관리자만 수정 가능합니다. 코드를 모를 경우 아래 승인 요청 버튼을 사용하세요.
+        본인 코드를 수정하거나 총관리자는 모든 코드를 관리할 수 있습니다.
       </p>
       <button class="btn btn-outline btn-sm" onclick="loadAdminCodes()" style="margin-bottom:12px">🔄 목록 불러오기</button>
       <div id="adminCodeListWrap" style="margin-bottom:14px;max-height:220px;overflow-y:auto"></div>
@@ -1539,34 +1541,25 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
       </div>
     </div>
 
-      <hr class="divider">
-    <!-- ★ 총관리자 전용: 수입가격 입력 -->
-    <div class="setting-section" id="importPriceSection" style="display:none">
-      <h3>🔒 수입가격 입력 (총관리자 전용)</h3>
-      <p style="font-size:.78rem;color:var(--text2);margin-bottom:12px">
-        수입가격을 입력하면 부가가치세 계산에 반영됩니다. 총관리자만 입력/수정할 수 있습니다.
-      </p>
-      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px">
-        <div class="form-group">
-          <label>JUC 수입단가 (원)</label>
-          <input type="text" inputmode="numeric" id="importJUC" placeholder="0" oninput="fmtInput(this)">
-        </div>
-        <div class="form-group">
-          <label>MEDIAS 수입단가 (원)</label>
-          <input type="text" inputmode="numeric" id="importMEDIAS" placeholder="0" oninput="fmtInput(this)">
-        </div>
-        <div class="form-group">
-          <label>DELL 수입단가 (원)</label>
-          <input type="text" inputmode="numeric" id="importDELL" placeholder="0" oninput="fmtInput(this)">
-        </div>
-      </div>
-      <div style="background:var(--yellow-light);border-radius:8px;padding:10px 14px;font-size:.78rem;color:#92400e;margin-bottom:10px">
-        ⚠️ 수입가격은 암호화되어 Firebase에 저장됩니다. 총관리자(9350)만 볼 수 있습니다.
-      </div>
-      <button class="btn btn-primary btn-sm" onclick="saveImportPrices()">💾 수입가격 저장</button>
-      <span id="importPriceMsg" style="font-size:.78rem;color:var(--green);margin-left:10px"></span>
-    </div>
+    <!-- ★ 총관리자 전용: 수입가격 입력 (VAT 계산용) -->
+    <div id="importPriceSection" style="display:none">
     <hr class="divider">
+    <div class="setting-section">
+      <h3>🔒 수입가격 입력 <span style="font-size:.72rem;background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:10px;margin-left:6px">총관리자 전용</span></h3>
+      <p style="font-size:.78rem;color:var(--text2);margin-bottom:12px">
+        수입가격을 입력하면 부가가치세 계산에 자동 반영됩니다.<br>
+        이 정보는 총관리자(유경호)만 확인할 수 있습니다.
+      </p>
+      <div id="importPriceList">
+        <div style="font-size:.8rem;color:var(--text3)">제품을 불러오는 중...</div>
+      </div>
+      <div style="margin-top:12px;padding:10px 14px;background:#fef9c3;border-radius:8px;border:1px solid #fde047;font-size:.78rem;color:#713f12">
+        💡 수입가격 = 실제 수입 원가 (VAT 매입세액 계산 기준)
+      </div>
+    </div>
+    </div>
+
+      <hr class="divider">
       <h3>📋 수금조건 코드 안내</h3>
       <div class="table-wrap">
         <table>
@@ -1896,6 +1889,7 @@ function loadLS(){
     kyReturns=JSON.parse(localStorage.getItem(LS_KY_RET)||'[]');
     const p=JSON.parse(localStorage.getItem(LS_PRODS)||'null');
     const ip=JSON.parse(localStorage.getItem(LS_INT_PRICES)||'null'); if(ip) internalPrices=ip;
+    const impP=JSON.parse(localStorage.getItem('amt_importPrices')||'null'); if(impP) importPrices=impP;
     if(p) products=p;
     // 기존 invLogs에 company 없으면 AMT로 기본설정
     invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; });
@@ -1915,6 +1909,7 @@ function saveLS(){
   localStorage.setItem(LS_TX,JSON.stringify(txLogs));
   localStorage.setItem(LS_BEST,JSON.stringify(bestReturns));
   localStorage.setItem(LS_KY_RET,JSON.stringify(kyReturns));
+  if(isSuperAdmin()) localStorage.setItem('amt_importPrices',JSON.stringify(importPrices));
 }
 
 /* ═══ 기본 대리점 데이터 ═══ */
@@ -2160,8 +2155,6 @@ function init(){
   const fb=window._fb;
   if(fb&&fb.ready){
     fbSync().then(()=>{ fbStartListener(); fbBackupToday(); autoSyncWithSavedPassword(); });
-    // ★ 11번: 앱 시작 시 KY주문 리스너 미리 시작 (새 주문 알림 수신)
-    setTimeout(()=>{ if(!_kyAdminInited){ _kyAdminInited=true; kyStartListener(); } }, 2000);
   }
   // 저장된 비밀번호 입력칸에 채우기 + 배너 표시
   loadSyncPasswordUI();
@@ -2588,26 +2581,31 @@ async function confirmMarkDone(id){
 
 async function delOrder(id){
   if(!confirm('이 발주를 삭제할까요?')) return;
-  const o=orders.find(x=>x.id===id);
+  await requireOtp('발주 삭제', async () => { await _doDelOrder(id); });
+}
+async function _doDelOrder(id){
+  const fb = window._fb;
+  const o = orders.find(x=>x.id===id);
+  const relKyId = o ? (o.relKyOrder||null) : null;
   if(o) addAuditLog('delete','발주',`삭제: ${o.dealerName} ${o.product} ${fmt(o.qty)}개 ${fmt(o.total)}원 (발주일:${o.orderDate})`,o);
-  orders=orders.filter(o=>o.id!==id);
-  invLogs=invLogs.filter(i=>i.relOrder!==id);
-  // ★ 연동된 KY주문도 취소 처리
-  if(o && o.relKyOrder){
-    const fb=window._fb;
-    if(fb&&fb.ready){
-      try{
-        const snap=await fb.get(fb.ref(fb.db,'ky_orders/'+o.relKyOrder));
-        if(snap.exists()){
-          const ko=snap.val();
-          await fb.set(fb.ref(fb.db,'ky_orders/'+o.relKyOrder), {...ko, status:'cancelled', statusNote:'발주삭제로 취소', statusUpdatedAt:new Date().toISOString()});
-        }
-      }catch(e){ console.warn('KY주문 연동 삭제 실패',e); }
-    }
-  }
+  // ① 연동된 재고이력 삭제
+  invLogs = invLogs.filter(i => i.relOrder !== id);
+  // ② 발주 삭제
+  orders = orders.filter(x => x.id !== id);
   saveLS();
   await fbSaveAll();
-  toast('삭제 완료','info');
+  // ③ KY 주문 취소 처리 (Firebase)
+  if(relKyId && fb && fb.ready){
+    try{
+      const kySnap = await fb.get(fb.ref(fb.db,'ky_orders/'+relKyId));
+      if(kySnap.exists()){
+        const kyO = kySnap.val();
+        await fb.set(fb.ref(fb.db,'ky_orders/'+relKyId),
+          {...kyO, status:'cancelled', statusNote:'[AMT발주삭제]', statusUpdatedAt:new Date().toISOString()});
+      }
+    }catch(e){ console.warn('KY주문 연동취소 실패',e); }
+  }
+  toast('발주 삭제 완료','info');
   refreshAll();
 }
 
@@ -2669,37 +2667,27 @@ async function saveOrderEdit(){
 
   if(!newDate||newQty<=0||newPrice<=0){ toast('날짜·수량·단가를 입력하세요','error'); return; }
 
-  const newTotal = newQty * newPrice;
-  const oldQty = o.qty, oldDate = o.orderDate;
-
-  // 감사 로그
-  addAuditLog('edit','발주',
-    `수정: ${o.dealerName} ${o.product} ${fmt(oldQty)}개→${fmt(newQty)}개 ${fmt(o.total)}→${fmt(newTotal)}원 (${oldDate}→${newDate})`);
-
-  // order 업데이트
-  o.orderDate = newDate;
-  o.qty = newQty;
-  o.price = newPrice;
-  o.total = newTotal;
-  o.dueDate = newDue;
-  o.memo = newMemo;
-  if(o.fee) o.fee = o.fee; // 택배비 유지
-
-  // KY 재고 출고 로그 재계산 (relOrder로 연결된 invLog 수정)
-  const invIdx = invLogs.findIndex(i=>i.relOrder===_editOrderId);
-  if(invIdx>=0){
-    invLogs[invIdx].date = newDate;
-    invLogs[invIdx].product = o.product;
-    invLogs[invIdx].qty = -newQty; // 출고는 음수
-    invLogs[invIdx].memo = `발주출고-${o.dealerName}`;
-  }
-
-  saveLS();
-  await fbSaveDoc('orders', _editOrderId, o);
-  await fbSaveAll();
-  closeOrderEdit();
-  toast('발주 수정 완료!','success');
-  refreshAll();
+  await requireOtp('발주 수정', async () => {
+    const newTotal = newQty * newPrice;
+    const oldQty = o.qty, oldDate = o.orderDate;
+    addAuditLog('edit','발주',
+      `수정: ${o.dealerName} ${o.product} ${fmt(oldQty)}개→${fmt(newQty)}개 ${fmt(o.total)}→${fmt(newTotal)}원 (${oldDate}→${newDate})`);
+    o.orderDate = newDate; o.qty = newQty; o.price = newPrice;
+    o.total = newTotal; o.dueDate = newDue; o.memo = newMemo;
+    // 연동된 재고이력 수정
+    const invIdx = invLogs.findIndex(i=>i.relOrder===_editOrderId);
+    if(invIdx>=0){
+      invLogs[invIdx].date = newDate;
+      invLogs[invIdx].product = o.product;
+      invLogs[invIdx].qty = -newQty;
+      invLogs[invIdx].memo = `발주출고-${o.dealerName}`;
+    }
+    saveLS();
+    await fbSaveAll();
+    closeOrderEdit();
+    toast('발주 수정 완료!','success');
+    refreshAll();
+  });
 }
 
 function editOrderNote(id){
@@ -2724,7 +2712,7 @@ function renderRecCalendar(){
   const t=today();
 
   // 이 달 수금예정 발주
-  const moOrders=orders.filter(o=>o.dueDate.startsWith(mo) && !o.returnOrder);
+  const moOrders=orders.filter(o=>o.dueDate.startsWith(mo));
 
   // 달력 그리기
   const firstDay=new Date(y,m-1,1).getDay(); // 0=일
@@ -2863,7 +2851,7 @@ function renderRecList(){
   const statusF=document.getElementById('rfStatus').value;
   const t=today();
 
-  let list=[...orders].filter(o=>!o.returnOrder).sort((a,b)=>a.dueDate.localeCompare(b.dueDate));
+  let list=[...orders].sort((a,b)=>a.dueDate.localeCompare(b.dueDate));
   if(mo) list=list.filter(o=>o.dueDate.startsWith(mo));
   if(dealerId) list=list.filter(o=>o.dealerId===dealerId);
   if(statusF==='pending') list=list.filter(o=>o.status!=='done'&&o.dueDate>=t);
@@ -3155,35 +3143,36 @@ async function deleteInvLog(id, isAuto){
   await requireOtp('재고이력 삭제', async () => { await _doDeleteInvLog(id, isAuto); });
 }
 async function _doDeleteInvLog(id, isAuto){
+  const fb = window._fb;
   const i=invLogs.find(x=>x.id===id);
   if(!i) return;
-  const autoMsg=isAuto==='true'?'\n⚠️ 이 항목은 발주/내부거래와 연동된 자동생성 항목입니다.\n연동된 데이터와 불일치가 생길 수 있습니다.\n':'\n';
+  const autoMsg=isAuto==='true'?'\n⚠️ 발주/내부거래와 연동된 항목입니다. 연동 발주도 함께 삭제됩니다.':'';
   if(!confirm(`재고이력을 삭제할까요?${autoMsg}\n${i.company||'AMT'} · ${i.product} · ${i.type==='in'?'입고':i.type==='out'?'출고':'조정'} ${i.qty>0?'+':''}${fmt(i.qty)}개`)) return;
   addAuditLog('delete','재고',`삭제: ${i.company||'AMT'} ${i.product} ${i.date} ${i.qty>0?'+':''}${i.qty}개 ${i.memo||''}`,i);
-  // ★ 연동된 발주내역도 삭제
+  // ① 재고이력 삭제
+  invLogs = invLogs.filter(x => x.id !== id);
+  // ② 연동된 발주 삭제 (relOrder 기준)
   if(i.relOrder){
-    const relOrd=orders.find(x=>x.id===i.relOrder);
-    if(relOrd) addAuditLog('delete','발주',`재고삭제 연동: ${relOrd.dealerName} ${relOrd.product} ${fmt(relOrd.qty)}개`,relOrd);
-    orders=orders.filter(x=>x.id!==i.relOrder);
-    // KY주문도 취소
-    if(relOrd && relOrd.relKyOrder){
-      const fb=window._fb;
-      if(fb&&fb.ready){
-        try{
-          const snap=await fb.get(fb.ref(fb.db,'ky_orders/'+relOrd.relKyOrder));
-          if(snap.exists()){
-            const ko=snap.val();
-            await fb.set(fb.ref(fb.db,'ky_orders/'+relOrd.relKyOrder), {...ko, status:'cancelled', statusNote:'재고삭제로 취소', statusUpdatedAt:new Date().toISOString()});
-          }
-        }catch(e){ console.warn('KY주문 연동 취소 실패',e); }
-      }
-    }
+    const rel = orders.find(o=>o.id===i.relOrder);
+    if(rel) addAuditLog('delete','발주',`재고이력삭제로 연동삭제: ${rel.dealerName} ${rel.product}`,rel);
+    orders = orders.filter(o=>o.id!==i.relOrder);
   }
-  invLogs=invLogs.filter(x=>x.id!==id);
+  // ③ 연동된 KY 주문 취소 처리
+  const relKy = i.relKyOrder || (i.relOrder ? (orders.find(o=>o.id===i.relOrder)||{}).relKyOrder : null);
   saveLS(); await fbSaveAll();
+  if(relKy && fb && fb.ready){
+    try{
+      const kySnap = await fb.get(fb.ref(fb.db,'ky_orders/'+relKy));
+      if(kySnap.exists()){
+        const kyO = kySnap.val();
+        await fb.set(fb.ref(fb.db,'ky_orders/'+relKy),
+          {...kyO, status:'cancelled', statusNote:'[재고이력삭제]', statusUpdatedAt:new Date().toISOString()});
+      }
+    }catch(e){ console.warn('KY주문 연동취소 실패',e); }
+  }
   notifySuperAdmin(`재고이력 삭제: ${i.company||'AMT'} ${i.product} ${i.date} ${i.qty}개`, '재고');
-  toast('재고이력 삭제 완료','info');
-  renderInvCards(); renderInvHistory(); renderOrders();
+  toast('재고이력 삭제 완료 (연동 발주도 삭제됨)','info');
+  renderInvCards(); renderInvHistory(); if(typeof renderOrders==='function') renderOrders();
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -4283,10 +4272,13 @@ async function _doSaveDealer(){
   if(editingDealerId){
     const d=getDealerById(editingDealerId);
     addAuditLog('edit','대리점',`수정: ${d.name} → ${name}`);
+    // ★ code 필드 반드시 보존 (덮어쓰지 않음)
+    const existingCode = d.code || '';
     Object.assign(d,{name,term,fee,note,products:prods});
+    if(existingCode) d.code = existingCode;
     await fbSaveDoc('dealers',d.id,d);
   } else {
-    const d={id:'d_'+Date.now(),name,term,fee,note,products:prods};
+    const d={id:'d_'+Date.now(),name,term,fee,note,products:prods,code:''};
     dealers.push(d);
     addAuditLog('create','대리점',`추가: ${name}`);
     await fbSaveDoc('dealers',d.id,d);
@@ -4749,7 +4741,7 @@ function migrateDueDates(){
 async function fbSaveAll(){
   const fb=window._fb; if(!fb||!fb.ready) return;
   const now=new Date().toISOString();
-  const payload={ orders, invLogs, dealers, products, internalTrades, auditLogs, txLogs, bestReturns, kyReturns, _updatedAt:now };
+  const payload={ orders, invLogs, dealers, products, internalTrades, auditLogs, txLogs, bestReturns, kyReturns, importPrices:(typeof importPrices!=='undefined'?importPrices:{}), _updatedAt:now };
   try{
     await fb.set(fb.ref(fb.db,'amt_data'), payload);
     setLastSync(now);
@@ -4809,13 +4801,22 @@ async function fbSync(){
 function _applyRemote(remote){
   if(remote.orders) orders=remote.orders;
   if(remote.invLogs){ invLogs=remote.invLogs; invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; }); }
-  if(remote.dealers) dealers=remote.dealers;
+  if(remote.dealers){
+    // ★ 서버 데이터 적용 시 기존 로컬 code 필드 보존 (서버에 code가 없는 경우)
+    const localDealerMap = {};
+    dealers.forEach(d=>{ if(d.code) localDealerMap[d.id]=d.code; });
+    dealers = remote.dealers;
+    dealers.forEach(d=>{
+      if(!d.code && localDealerMap[d.id]) d.code = localDealerMap[d.id];
+    });
+  }
   if(remote.products) products=remote.products;
   if(remote.internalTrades) internalTrades=remote.internalTrades;
   if(remote.auditLogs) auditLogs=remote.auditLogs;
   if(remote.txLogs) txLogs=remote.txLogs;
   if(remote.bestReturns) bestReturns=remote.bestReturns;
   if(remote.kyReturns) kyReturns=remote.kyReturns;
+  if(remote.importPrices) importPrices=remote.importPrices;
   const now=remote._updatedAt||new Date().toISOString();
   localStorage.setItem('amt_updatedAt', now);
   saveLS();
@@ -4970,29 +4971,13 @@ function calcVatByCompany(startYm, endYm){
   const vatAmt  = r => Math.round(r/11);
   const supplyAmt = r => Math.round(r*10/11);
 
-  // ★ 수입가격 기반 순수 VAT 계산 (총관리자만 정확한 값 볼 수 있음)
-  // 매출 VAT - 매입 VAT = 납부세액
-  const calcImportCost = (company, start, end) => {
-    if(company !== 'AMT') return 0;
-    // KY 공급 물량 기반 수입원가 추정
-    let cost = 0;
-    const kyOrdInPeriod = orders.filter(o => inPeriod(ym(o.orderDate)));
-    kyOrdInPeriod.forEach(o => {
-      const ip = importPrices[o.product]||0;
-      if(ip > 0) cost += ip * (o.qty||0);
-    });
-    return cost;
-  };
-  const importCostAMT = calcImportCost('AMT', startYm, endYm);
-  const importVatAMT = importCostAMT > 0 ? Math.round(importCostAMT / 11) : 0;
-  const netVatAMT = vatAmt(amtRevenue) - importVatAMT;
+  // ★ 수입 매입세액 (총관리자 입력 수입가격 기준)
+  const importVatAmt = (typeof calcImportVat === 'function') ? calcImportVat(startYm, endYm) : 0;
 
   return {
-    AMT: { revenue: amtRevenue, supply: supplyAmt(amtRevenue), vat: vatAmt(amtRevenue),
-           importCost: importCostAMT, importVat: importVatAMT, netVat: netVatAMT,
-           hasImportPrice: importCostAMT > 0 },
-    KY:  { revenue: kyRevenue,  supply: supplyAmt(kyRevenue),  vat: vatAmt(kyRevenue)  },
-    BEST:{ revenue: bestRevenue,supply: supplyAmt(bestRevenue),vat: vatAmt(bestRevenue) },
+    AMT: { revenue: amtRevenue, supply: supplyAmt(amtRevenue), vat: vatAmt(amtRevenue), importVat: importVatAmt },
+    KY:  { revenue: kyRevenue,  supply: supplyAmt(kyRevenue),  vat: vatAmt(kyRevenue),  importVat: 0 },
+    BEST:{ revenue: bestRevenue,supply: supplyAmt(bestRevenue),vat: vatAmt(bestRevenue), importVat: 0 },
   };
 }
 
@@ -5018,13 +5003,11 @@ function renderVatKpiCards(){
     </div>
     ${companies.map(c=>{
       const d = vatData[c.key];
-      const showImport = c.key==='AMT' && d.hasImportPrice && isSuperAdmin();
       return `<div class="kpi" style="--kpi-color:${c.color};background:${c.bg}">
         <div class="kpi-label" style="color:${c.color}">🧾 ${c.label} 예상 VAT</div>
         <div class="kpi-value" style="font-size:1.05rem;color:${c.color}">${fmt(d.vat)}</div>
         <div class="kpi-sub">공급가액 ${fmt(d.supply)}원 · 매출 ${fmt(d.revenue)}원</div>
-        ${showImport ? `<div style="font-size:.72rem;color:var(--red);margin-top:4px;font-weight:700">매입VAT: -${fmt(d.importVat)}원</div>
-        <div style="font-size:.78rem;font-weight:800;color:#059669;margin-top:2px">순납부세액: ${fmt(d.netVat)}원</div>` : ''}
+        ${c.key==='AMT' && d.importVat>0 ? `<div style="font-size:.72rem;color:#16a34a;margin-top:2px;font-weight:600">📦 수입매입세액 -${fmt(d.importVat)}원 → 납부세액 ${fmt(Math.max(0,d.vat-d.importVat))}원</div>` : ''}
         <div style="font-size:.68rem;color:var(--text3);margin-top:2px">${c.key==='BEST'?'※매입기준 추정':'VAT포함 매출/11'}</div>
       </div>`;
     }).join('')}
@@ -5191,6 +5174,8 @@ function nav(btn){
   document.getElementById('page-'+page).classList.add('active');
   btn.classList.add('active');
   refreshAll();
+  // 설정 탭 진입 시 수입가격 섹션 표시 여부 결정
+  if(page==='settings') renderImportPriceSection();
 }
 
 function recTab(name,btn){
@@ -5278,7 +5263,7 @@ async function uploadWithKey(key){
   const fb = window._fb;
   if(!fb||!fb.ready) return;
   const now = new Date().toISOString();
-  const payload={ orders, invLogs, dealers, products, internalTrades, auditLogs, txLogs, bestReturns, kyReturns, _updatedAt:now };
+  const payload={ orders, invLogs, dealers, products, internalTrades, auditLogs, txLogs, bestReturns, kyReturns, importPrices:(typeof importPrices!=='undefined'?importPrices:{}), _updatedAt:now };
   await fb.set(fb.ref(fb.db,'amt_pw/'+key), payload);
 }
 
@@ -5746,8 +5731,6 @@ let _kyAdminInited = false;
 function initKyAdmin(){
   if(_kyAdminInited) return;
   _kyAdminInited = true;
-  // ★ 알림 권한 요청
-  if(Notification && Notification.permission === 'default') Notification.requestPermission();
   const fb = window._fb;
   if(!fb || !fb.ready){
     document.getElementById('kyAdminFbWarn').style.display = 'block';
@@ -5765,6 +5748,51 @@ function kySetSync(on, label){
   const lb = document.getElementById('kyAdminSyncLabel');
   dot.className = 'sync-dot' + (on ? ' pulse' : ' off');
   if(label) lb.textContent = label;
+}
+
+/* ═══ KY 신규주문 팝업 창 ═══ */
+function showKyNewOrderPopup(order){
+  // 기존 팝업 제거 후 새로 생성
+  const old = document.getElementById('kyNewOrderPopup');
+  if(old) old.remove();
+
+  const popup = document.createElement('div');
+  popup.id = 'kyNewOrderPopup';
+  popup.style.cssText = [
+    'position:fixed','bottom:80px','right:20px','z-index:9999',
+    'background:#fff','border:2px solid var(--yellow)','border-radius:14px',
+    'padding:16px 18px','min-width:260px','max-width:320px',
+    'box-shadow:0 8px 32px rgba(217,119,6,.30)',
+    'animation:slideIn .25s ease'
+  ].join(';');
+
+  const itemsText = (order.items||[]).map(i => i.product+' '+fmt(i.qty)+'개').join(' · ');
+  const typeTag = order.orderType && order.orderType !== 'order'
+    ? `<span style="margin-left:6px;font-size:.62rem;padding:1px 7px;border-radius:10px;font-weight:700;background:${order.orderType==='return'?'#fef3c7':'#eff6ff'};color:${order.orderType==='return'?'#92400e':'#1e40af'}">${order.orderType==='return'?'반품':'교환'}</span>` : '';
+  const now = new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+
+  popup.innerHTML = `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <span style="font-size:1.4rem">🔔</span>
+      <div style="flex:1">
+        <div style="font-weight:800;font-size:.9rem;color:var(--yellow)">새 주문 접수!</div>
+        <div style="font-size:.7rem;color:var(--text3)">${now}</div>
+      </div>
+      <button onclick="document.getElementById('kyNewOrderPopup').remove()"
+        style="background:none;border:none;font-size:1.1rem;cursor:pointer;color:var(--text3);padding:0 2px">✕</button>
+    </div>
+    <div style="font-weight:700;font-size:.95rem;margin-bottom:3px">${order.dealerName}${typeTag}</div>
+    <div style="font-size:.8rem;color:var(--text2);margin-bottom:10px">${itemsText}</div>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <span style="font-family:monospace;font-size:1rem;font-weight:800;color:var(--yellow)">${fmt(order.total)}원</span>
+      <button onclick="document.getElementById('kyNewOrderPopup').remove(); nav(document.querySelector('[data-page=kyorder]'));"
+        style="background:var(--yellow);color:#fff;border:none;border-radius:8px;padding:7px 14px;font-size:.8rem;font-weight:700;cursor:pointer">
+        주문관리 →
+      </button>
+    </div>
+  `;
+  document.body.appendChild(popup);
+  // ★ 자동 닫힘 없음 - 확인 버튼을 눌러야만 닫힘
 }
 
 function kyStartListener(){
@@ -5789,6 +5817,8 @@ function kyStartListener(){
               requireInteraction: true
             });
           }
+          // ★ 화면 팝업 창 (AMT 앱 내)
+          showKyNewOrderPopup(o);
         });
         const badge = document.getElementById('kyNewBadge');
         if(badge){ badge.style.display='inline-block'; setTimeout(()=>badge.style.display='none',15000); }
@@ -5825,13 +5855,8 @@ function kyUpdateKpi(list){
   const active = list.filter(o => o.status !== 'cancelled');
   document.getElementById('kyKpiTotal').textContent = fmt(active.length);
   document.getElementById('kyKpiPending').textContent = fmt(active.filter(o=>o.status==='pending').length);
-  document.getElementById('kyKpiAccepted').textContent = fmt(active.filter(o=>o.status==='accepted'||o.status==='received').length);
-  // 교환은 매출 변화 없음, 반품은 매출에서 차감
-  const moAmt = active.filter(o=>o.orderDate&&o.orderDate.startsWith(mo)).reduce((s,o)=>{
-    if(o.orderType==='exchange') return s; // 교환: 매출변화 없음
-    if(o.orderType==='return' && (o.status==='received'||o.status==='shipped')) return s - (o.total||0); // 반품: 차감
-    return s+(o.total||0);
-  },0);
+  document.getElementById('kyKpiAccepted').textContent = fmt(active.filter(o=>o.status==='accepted').length);
+  const moAmt = active.filter(o=>o.orderDate&&o.orderDate.startsWith(mo)).reduce((s,o)=>s+(o.total||0),0);
   document.getElementById('kyKpiAmt').textContent = fmt(moAmt);
 }
 
@@ -5850,7 +5875,6 @@ function kyApplyFilter(){
   const to = document.getElementById('kyFTo').value;
   // ★ 취소된 주문은 기본적으로 제외
   let list = kyAllOrders.filter(o => o.status !== 'cancelled');
-  // ★ 상태 필터에서 received(반품입고) 처리
   if(status) list = list.filter(o=>o.status===status);
   if(dealer) list = list.filter(o=>o.dealerName===dealer);
   if(from) list = list.filter(o=>o.orderDate>=from);
@@ -5869,7 +5893,6 @@ const kyStatusMap = {
   pending:  {label:'대기중',cls:'pending'},
   accepted: {label:'접수완료',cls:'accepted'},
   shipped:  {label:'출고완료',cls:'shipped'},
-  received: {label:'입고완료',cls:'shipped'},   // ★ 반품 입고처리
   cancelled:{label:'취소됨',cls:'rejected'}
 };
 
@@ -5907,14 +5930,18 @@ function kyRenderOrders(list){
       ${o.statusNote?`<div style="font-size:.78rem;color:var(--text2);background:var(--surface2);border-radius:6px;padding:7px 10px;margin-bottom:10px;border-left:3px solid var(--yellow)">📝 관리자메모: ${o.statusNote}${o.processedBy?` (${o.processedBy})`:''}</div>`:''}
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding-top:10px;border-top:1px solid var(--border)">
         ${o.status==='pending'?`
-          <button class="btn btn-success" style="font-size:.85rem;padding:9px 16px;min-width:80px" onclick="kyOpenAction('${o.id}','accepted')">✅ 접수</button>
-          <button class="btn btn-primary" style="font-size:.85rem;padding:9px 16px;min-width:80px;${o.orderType==='return'?'background:#059669;border-color:#059669':''}" onclick="kyOpenAction('${o.id}','${o.orderType==='return'?'received':'shipped'}')">🚚 ${o.orderType==='return'?'입고처리':'출고처리'}</button>
+          <button class="btn btn-success" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','accepted')">✅ 접수</button>
+          ${o.orderType==='return'?
+            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem;color:#16a34a;border-color:#16a34a" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
+            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고</button>`
+          }
         `:o.status==='accepted'?`
-          <button class="btn btn-primary" style="font-size:.85rem;padding:9px 16px;min-width:80px;${o.orderType==='return'?'background:#059669;border-color:#059669':''}" onclick="kyOpenAction('${o.id}','${o.orderType==='return'?'received':'shipped'}')">🚚 ${o.orderType==='return'?'입고처리':'출고처리'}</button>
+          ${o.orderType==='return'?
+            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem;color:#16a34a;border-color:#16a34a" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
+            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고처리</button>`
+          }
           <button class="btn btn-ghost btn-sm" onclick="kyOpenAction('${o.id}','pending')">↩ 대기로</button>
-        `:o.status==='shipped'?`
-          <button class="btn btn-ghost btn-sm" onclick="kyOpenAction('${o.id}','accepted')">↩ 접수로</button>
-        `:o.status==='received'?`
+        `:o.status==='shipped'||o.status==='received'?`
           <button class="btn btn-ghost btn-sm" onclick="kyOpenAction('${o.id}','accepted')">↩ 접수로</button>
         `:''}
         <span style="margin-left:auto;font-family:monospace;font-size:.9rem;font-weight:800;color:var(--yellow)">${fmt(o.total)}원</span>
@@ -5927,20 +5954,27 @@ function kyOpenAction(orderId, targetStatus){
   const o = kyAllOrders.find(x=>x.id===orderId);
   if(!o) return;
   _kyDetailId = orderId;
-  const labels={accepted:'접수 완료 처리',shipped:'출고 완료 처리',pending:'대기중으로 되돌리기'};
-  const colors={accepted:'var(--green)',shipped:'var(--blue)',pending:'var(--gray)'};
+  const isReturn   = o.orderType === 'return';
+  const isExchange = o.orderType === 'exchange';
+  const labels={
+    accepted:'접수 완료 처리',
+    shipped: isExchange ? '교환 출고처리 (재고·매출 변동 없음)' : '출고 완료 처리',
+    received:'반품 입고처리',
+    pending:'대기중으로 되돌리기'
+  };
+  const colors={accepted:'var(--green)',shipped:'var(--blue)',received:'#16a34a',pending:'var(--gray)'};
+
   const rows = (o.items||[]).map(i=>`<div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:.85rem"><span>${i.product}</span><span style="font-weight:700">${fmt(i.qty)}개 · ${fmt(i.total)}원</span></div>`).join('');
 
-  // ★ 출고/입고처리 안내
-  const isReturn = o.orderType === 'return';
-  const isExchange = o.orderType === 'exchange';
-  const shippedNote = targetStatus==='shipped' && !isReturn && !isExchange
-    ? `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:.76rem;color:#1e40af">🚚 출고 처리 시 자동 실행:<br>① KY 재고 차감 &nbsp;② AMT 발주 등록 &nbsp;③ 수금관리 등록</div>`
-    : targetStatus==='shipped' && isExchange
-    ? `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:.76rem;color:#065f46">🔁 교환 출고처리: 재고/매출/수금 변동 없음</div>`
-    : targetStatus==='received'
-    ? `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:.76rem;color:#92400e">📦 반품 입고처리 시 자동 실행:<br>① KY 재고 입고(복구) &nbsp;② 발주 마이너스 등록 &nbsp;③ 수금관리 미표시</div>`
-    : '';
+  // 주문유형별 안내
+  let actionNote = '';
+  if(targetStatus==='shipped' && !isReturn && !isExchange){
+    actionNote = `<div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:.76rem;color:#1e40af">🚚 <b>일반출고</b> 자동처리: KY재고 차감 · AMT발주 등록 · 수금관리 등록</div>`;
+  } else if(targetStatus==='received' && isReturn){
+    actionNote = `<div style="background:#f0fdf4;border:1px solid #86efac;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:.76rem;color:#15803d">📥 <b>반품 입고</b> 자동처리: KY재고 플러스 · AMT매출 마이너스 · 수금미등록</div>`;
+  } else if(isExchange){
+    actionNote = `<div style="background:#fef9c3;border:1px solid #fde047;border-radius:8px;padding:9px 12px;margin-bottom:10px;font-size:.76rem;color:#854d0e">🔁 <b>교환</b>: 재고·매출·수금 변동 없음</div>`;
+  }
 
   document.getElementById('kyDetailContent').innerHTML = `
     <div style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid var(--border);font-size:.85rem"><span>대리점</span><span style="font-weight:700">${o.dealerName}</span></div>
@@ -5950,7 +5984,7 @@ function kyOpenAction(orderId, targetStatus){
     <div style="display:flex;justify-content:space-between;padding:10px 0 0;font-weight:800;font-size:.88rem"><span>합계</span><span style="color:var(--yellow)">${fmt(o.total)}원</span></div>`;
   document.getElementById('kyActionArea').innerHTML = `
     <div style="font-weight:700;margin-bottom:8px;color:${colors[targetStatus]||'var(--text)'}">→ ${labels[targetStatus]||targetStatus}</div>
-    ${shippedNote}
+    ${actionNote}
     <textarea id="kyActionNote" placeholder="대리점에 전달할 메모 (선택)..." style="width:100%;background:var(--gray-light);border:1.5px solid var(--border);border-radius:6px;padding:10px;font-family:inherit;font-size:.85rem;min-height:70px;resize:vertical;outline:none;margin-bottom:8px">${o.statusNote||''}</textarea>
     <div style="display:flex;gap:8px">
       <button class="btn btn-ghost" style="flex:1" onclick="kyCloseDetail()">취소</button>
@@ -5972,18 +6006,17 @@ async function kyConfirmAction(orderId, targetStatus){
     const updated = {...o, status:targetStatus, statusNote:note, statusUpdatedAt:now, processedBy: window._amtAdminName || '─'};
     await fb.set(fb.ref(fb.db,'ky_orders/'+orderId), updated);
 
-    // ★ 출고 시 AMT 자동 업데이트 (재고차감 + 발주등록)
-    if(targetStatus === 'shipped'){
-      if(o.orderType === 'exchange'){
-        // 교환: 재고/매출/수금 변동 없음 (단순 상태변경만)
-        toast('✅ 교환 출고처리 완료 (재고/매출 변동 없음)','success');
-      } else {
-        await kyAutoUpdateOnShipped(o, note, now);
-      }
+    // ★ 일반주문 출고 → KY재고차감 + AMT발주+수금 등록
+    if(targetStatus === 'shipped' && o.orderType !== 'return' && o.orderType !== 'exchange'){
+      await kyAutoUpdateOnShipped(o, note, now);
     }
-    // ★ 반품 입고처리: 재고 복구 + 매출 차감 + 발주 마이너스, 수금관리 제외
-    if(targetStatus === 'received'){
-      await kyAutoUpdateOnReceived(o, note, now);
+    // ★ 반품 입고처리 → KY재고 플러스 + AMT발주 마이너스 (수금제외)
+    if(targetStatus === 'received' && o.orderType === 'return'){
+      await kyAutoUpdateOnReturn(o, note, now);
+    }
+    // ★ 교환 출고처리 → 재고/매출 변화 없음 (수금제외)
+    if(targetStatus === 'shipped' && o.orderType === 'exchange'){
+      toast('🔁 교환 처리 완료 (재고·매출 변동 없음)', 'success');
     }
 
     // ★ 전체 사용자 알림
@@ -6024,7 +6057,7 @@ async function kyAutoUpdateOnShipped(order, note, now){
     // KY 재고 차감
     for(const item of (order.items||[])){
       const invId = 'inv_ky_ship_' + order.id + '_' + item.product.replace(/\s/g,'_');
-      if((invLogs||[]).some(i => i.id === invId)) continue;
+      if(invLogs.some(i => i.id === invId)) continue;
       invLogs.push({
         id: invId,
         date: order.orderDate || now.slice(0,10),
@@ -6039,7 +6072,7 @@ async function kyAutoUpdateOnShipped(order, note, now){
     }
 
     // AMT 발주 + 수금 등록
-    const alreadyExists = (amtOrders||[]).some(o => o.relKyOrder === order.id);
+    const alreadyExists = amtOrders.some(o => o.relKyOrder === order.id);
     if(!alreadyExists && dealer){
       for(const item of (order.items||[])){
         const dp = (dealer.products||[]).find(p => p.product === item.product);
@@ -6068,10 +6101,10 @@ async function kyAutoUpdateOnShipped(order, note, now){
     await fb.set(fb.ref(fb.db,'amt_data/orders'), amtOrders);
     await fb.set(fb.ref(fb.db,'amt_data/_updatedAt'), now);
 
-    // 로컬 메모리도 업데이트 (전역 변수 직접 갱신)
-    // invLogs(로컬) = Firebase에서 가져온 최신 데이터로 교체
-    if(data.invLogs) { window.invLogs = data.invLogs; window.invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; }); }
-    if(data.orders) window.orders = data.orders;
+    // 로컬 메모리도 업데이트
+    // 로컬 메모리 업데이트 (전역 invLogs에 중복 없이 반영)
+    const localIds = new Set(invLogs.map(x=>x.id));
+    invLogs.forEach(function(i){ if(i.relKyOrder===order.id && !localIds.has(i.id)){ invLogs.push(i); } });
     toast('✅ KY재고 차감 + 발주/수금 자동 등록!','success');
     if(typeof renderInvCards === 'function') renderInvCards();
     if(typeof refreshAll === 'function') refreshAll();
@@ -6081,8 +6114,13 @@ async function kyAutoUpdateOnShipped(order, note, now){
   }
 }
 
-// ★ 반품 입고처리: KY재고 입고 + 발주 마이너스 등록 (수금제외)
-async function kyAutoUpdateOnReceived(order, note, now){
+/* ═══════════════════════════════════════════════════════
+   반품 입고처리 자동 업데이트
+   - KY 재고 플러스 (입고)
+   - AMT 발주에 마이너스 금액 등록 (매출 차감)
+   - 수금관리에는 표시 안함 (isReturn:true)
+═══════════════════════════════════════════════════════ */
+async function kyAutoUpdateOnReturn(order, note, now){
   const fb = window._fb;
   if(!fb||!fb.ready) return;
   try{
@@ -6090,47 +6128,47 @@ async function kyAutoUpdateOnReceived(order, note, now){
     if(!snap.exists()) return;
     const data = snap.val();
     const remoteInvLogs = data.invLogs || [];
-    const remoteOrders = data.orders || [];
+    const amtOrders = data.orders || [];
     const dealers = data.dealers || [];
     const dealer = dealers.find(d => d.id === order.dealerId || d.name === order.dealerName);
 
-    // KY 재고 입고 (반품이므로 재고 복구)
+    // ① KY 재고 플러스 (반품 입고)
     for(const item of (order.items||[])){
-      const invId = 'inv_ky_recv_' + order.id + '_' + item.product.replace(/\s/g,'_');
+      const invId = 'inv_ky_ret_' + order.id + '_' + item.product.replace(/\s/g,'_');
       if(remoteInvLogs.some(i => i.id === invId)) continue;
       remoteInvLogs.push({
         id: invId,
         date: order.orderDate || now.slice(0,10),
         product: item.product,
-        qty: Math.abs(item.qty),   // 입고 (양수)
+        qty: +Math.abs(item.qty),  // 반품 입고: 양수
         type: 'in',
         company: 'KY',
-        memo: `[반품입고] ${order.dealerName} #${order.id}`,
+        memo: `[KY반품입고] ${order.dealerName} #${order.id}`,
         relKyOrder: order.id,
         createdAt: now
       });
     }
 
-    // 발주 마이너스 등록 (수금관리에는 반영하지 않음 = returnOrder:true 표시)
-    const alreadyExists = remoteOrders.some(o => o.relKyOrder === order.id && o.orderType === 'return');
+    // ② AMT 발주에 마이너스 등록 (매출 차감, 수금 제외)
+    const alreadyExists = amtOrders.some(o => o.relKyOrder === order.id && o.isReturn);
     if(!alreadyExists && dealer){
       for(const item of (order.items||[])){
         const dp = (dealer.products||[]).find(p => p.product === item.product);
         const price = dp ? dp.price : item.price;
-        remoteOrders.push({
+        amtOrders.push({
           id: 'ord_ky_ret_' + order.id + '_' + item.product.replace(/\s/g,'_'),
           dealerId: order.dealerId,
           dealerName: order.dealerName,
           product: item.product,
-          qty: -item.qty,          // 마이너스 수량
-          price,
-          total: -(price * item.qty),  // 마이너스 금액
+          qty: -Math.abs(item.qty),   // 마이너스 수량
+          price: price,
+          total: -(price * Math.abs(item.qty)),  // 마이너스 금액
           fee: 0,
           orderDate: order.orderDate || now.slice(0,10),
-          dueDate: order.orderDate || now.slice(0,10),
-          status: 'done',          // 수금완료로 표시 (수금관리 제외)
-          returnOrder: true,       // ★ 수금관리 화면 제외용 플래그
-          memo: `[반품] ${note||''}`,
+          dueDate: '',
+          status: 'done',  // 수금완료 처리 → 수금관리에 미표시
+          isReturn: true,  // 반품 플래그
+          memo: `[KY반품자동] ${note||''}`,
           relKyOrder: order.id,
           createdAt: now
         });
@@ -6138,18 +6176,18 @@ async function kyAutoUpdateOnReceived(order, note, now){
     }
 
     await fb.set(fb.ref(fb.db,'amt_data/invLogs'), remoteInvLogs);
-    await fb.set(fb.ref(fb.db,'amt_data/orders'), remoteOrders);
+    await fb.set(fb.ref(fb.db,'amt_data/orders'), amtOrders);
     await fb.set(fb.ref(fb.db,'amt_data/_updatedAt'), now);
 
-    // 로컬 메모리 갱신
-    if(data.invLogs) { window.invLogs = remoteInvLogs; window.invLogs.forEach(i=>{ if(!i.company) i.company='AMT'; }); }
-    if(data.orders) window.orders = remoteOrders;
-    toast('✅ 반품 입고처리 완료 (재고 복구 + 발주 마이너스 등록)','success');
+    // 로컬 반영
+    const localIds = new Set(invLogs.map(x=>x.id));
+    remoteInvLogs.forEach(function(i){ if(i.relKyOrder===order.id && !localIds.has(i.id)){ invLogs.push(i); } });
+    toast('📥 반품 입고 완료 — KY재고 플러스 + 매출 차감 등록!', 'success');
     if(typeof renderInvCards === 'function') renderInvCards();
     if(typeof refreshAll === 'function') refreshAll();
   }catch(e){
-    console.error('kyAutoUpdateOnReceived 실패:', e);
-    toast('⚠️ 입고됐으나 자동업데이트 실패: '+e.message,'error');
+    console.error('kyAutoUpdateOnReturn 실패:', e);
+    toast('⚠️ 반품 처리됐으나 자동업데이트 실패: '+e.message,'error');
   }
 }
 
@@ -6209,19 +6247,28 @@ function renderAdminCodeList(data){
     wrap.innerHTML = '<div style="font-size:.8rem;color:#888;padding:8px">등록된 관리자가 없습니다.</div>';
     return;
   }
-  const isSA = isSuperAdmin();
-  wrap.innerHTML = entries.map(([name, code]) => `
+  const superNote = document.getElementById('adminCodeSuperNote');
+  const isSuper = isSuperAdmin();
+  if(superNote) superNote.style.display = isSuper ? 'block' : 'none';
+
+  wrap.innerHTML = entries.map(([name, code]) => {
+    // ★ 총관리자: 모든 코드 표시·수정 가능
+    // ★ 일반 관리자: 자기 코드만 수정 가능 (다른 사람 코드는 마스킹)
+    const myName = window._amtAdminName || '';
+    const canEdit = isSuper || name === myName;
+    const displayCode = isSuper ? code : (name === myName ? code : '●●●●●●');
+    return `
     <div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border)">
-      <span style="flex:1;font-weight:700;font-size:.88rem">${name}</span>
-      <!-- ★ 총관리자는 항상 코드 표시, 일반 관리자는 자기 코드만 볼 수 있음 -->
-      <input type="${isSA || name === window._amtAdminName ? 'text' : 'password'}"
-        id="acode_${name}" value="${code}"
-        style="width:90px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-family:monospace;font-size:.9rem;font-weight:700;text-align:center"
-        ${!isSA && name !== window._amtAdminName ? 'readonly' : ''}>
-      ${isSA || name === window._amtAdminName ? `<button class="btn btn-primary btn-xs" onclick="saveOneAdminCode('${name}')">저장</button>` : ''}
-      ${isSA ? `<button class="btn btn-danger btn-xs" onclick="deleteAdminCode('${name}')">삭제</button>` : ''}
-    </div>
-  `).join('');
+      <span style="flex:1;font-weight:700;font-size:.88rem">${name}${name===myName?'<span style="font-size:.65rem;margin-left:4px;color:var(--yellow)">(나)</span>':''}</span>
+      ${canEdit
+        ? `<input type="text" id="acode_${name}" value="${displayCode}"
+            style="width:90px;padding:5px 8px;border:1.5px solid var(--border);border-radius:6px;font-family:monospace;font-size:.9rem;font-weight:700;text-align:center">
+           <button class="btn btn-primary btn-xs" onclick="saveOneAdminCode('${name}')">저장</button>
+           ${isSuper ? `<button class="btn btn-danger btn-xs" onclick="deleteAdminCode('${name}')">삭제</button>` : ''}`
+        : `<span style="font-family:monospace;font-size:.9rem;color:#9ca3af;padding:5px 8px">${displayCode}</span>`
+      }
+    </div>`;
+  }).join('');
 }
 
 async function saveOneAdminCode(name){
@@ -6294,15 +6341,29 @@ async function saveDealerCode(idx, dealerId){
   const newCode = (document.getElementById('dcode_'+idx).value||'').trim();
   if(!newCode){ alert('코드를 입력하세요'); return; }
 
-  const snap = await fb.get(fb.ref(fb.db,'amt_data'));
-  if(!snap.exists()){ alert('데이터 없음'); return; }
-  const data = snap.val();
-  const dealers = data.dealers||[];
-  const di = dealers.findIndex(d=>d.id===dealerId);
-  if(di<0){ alert('대리점을 찾을 수 없습니다'); return; }
-  dealers[di].code = newCode;
-  await fb.set(fb.ref(fb.db,'amt_data/dealers'), dealers);
-  toast('✅ '+dealers[di].name+' 코드 → '+newCode,'success');
+  try{
+    // ★ 핵심 수정: 전체 amt_data를 읽어 code 업데이트 후 전체 저장
+    // 부분 저장(amt_data/dealers)만 하면 AMT fbSaveAll이 로컬 메모리로 덮어씌움
+    const snap = await fb.get(fb.ref(fb.db,'amt_data'));
+    if(!snap.exists()){ alert('데이터 없음'); return; }
+    const data = snap.val();
+    const remoteDealers = data.dealers||[];
+    const di = remoteDealers.findIndex(d=>d.id===dealerId);
+    if(di<0){ alert('대리점을 찾을 수 없습니다'); return; }
+    remoteDealers[di].code = newCode;
+    data.dealers = remoteDealers;
+    data._updatedAt = new Date().toISOString();
+    // 전체 저장
+    await fb.set(fb.ref(fb.db,'amt_data'), data);
+    // 로컬 메모리도 업데이트 (다음 fbSaveAll에서 코드 보존)
+    const localDi = dealers.findIndex(d=>d.id===dealerId);
+    if(localDi>=0) dealers[localDi].code = newCode;
+    saveLS();
+    toast('✅ '+remoteDealers[di].name+' 코드 → '+newCode,'success');
+    loadDealerCodes(); // 목록 새로고침
+  }catch(e){
+    toast('❌ 저장 실패: '+e.message,'error');
+  }
 }
 
 // ── 코드 모를 때 승인 요청 메일 ──
@@ -6327,6 +6388,70 @@ function requestCodeChange(type){
    - 총관리자(9350)에게 Firebase 알림 전송
    - 10분 유효
 ═══════════════════════════════════════════════════════ */
+/* ═══════════════════════════════════════════════════════
+   수입가격 관리 (총관리자 전용)
+═══════════════════════════════════════════════════════ */
+let importPrices = {}; // { JUC: 1000000, MEDIAS: 500000, DELL: 800000 }
+
+function renderImportPriceSection(){
+  // 총관리자만 표시
+  const section = document.getElementById('importPriceSection');
+  if(!section) return;
+  if(!isSuperAdmin()){ section.style.display='none'; return; }
+  section.style.display='block';
+
+  const wrap = document.getElementById('importPriceList');
+  if(!wrap) return;
+  const prods = products.length ? products : ['JUC','MEDIAS','DELL'];
+  wrap.innerHTML = prods.map(p => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)">
+      <span style="font-weight:700;min-width:80px">${p}</span>
+      <input type="number" id="ip_${p}" placeholder="수입단가(원)"
+        value="${importPrices[p]||''}"
+        style="flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:6px;font-size:.88rem">
+      <button class="btn btn-primary btn-sm" onclick="saveImportPrice('${p}')">저장</button>
+    </div>
+  `).join('') + `
+    <div style="margin-top:10px">
+      <button class="btn btn-outline btn-sm" onclick="saveAllImportPrices()">💾 전체 저장</button>
+    </div>`;
+}
+
+function saveImportPrice(prod){
+  const val = parseFloat(document.getElementById('ip_'+prod).value)||0;
+  importPrices[prod] = val;
+  saveLS(); fbSaveAll();
+  toast(prod + ' 수입가격 저장: ' + fmt(val) + '원', 'success');
+}
+
+function saveAllImportPrices(){
+  const prods = products.length ? products : ['JUC','MEDIAS','DELL'];
+  prods.forEach(p => {
+    const el = document.getElementById('ip_'+p);
+    if(el) importPrices[p] = parseFloat(el.value)||0;
+  });
+  saveLS(); fbSaveAll();
+  toast('수입가격 전체 저장 완료', 'success');
+}
+
+// VAT 계산 시 수입가격 반영 (매입세액)
+function calcImportVat(startYm, endYm){
+  if(!Object.keys(importPrices).length) return 0;
+  // 해당 기간 invLogs에서 AMT 입고 수량 합계
+  const logs = invLogs.filter(i => {
+    if((i.company||'AMT') !== 'AMT') return false;
+    if(i.type !== 'in' && i.type !== 'adjust') return false;
+    const ym = (i.date||'').slice(0,7);
+    return ym >= startYm && ym <= endYm;
+  });
+  let totalImport = 0;
+  logs.forEach(i => {
+    const price = importPrices[i.product]||0;
+    if(price > 0) totalImport += Math.abs(i.qty) * price;
+  });
+  return Math.round(totalImport / 11); // 매입세액 (VAT 포함가의 1/11)
+}
+
 const SUPER_ADMIN_CODE = '9350';
 let _otpPending = null; // { action, label, callback }
 
@@ -6735,86 +6860,43 @@ async function doAmtLogin(){
 function setAmtAdminSession(name, code){
   sessionStorage.setItem(AMT_ADMIN_SESSION, name);
   sessionStorage.setItem('amt_admin_code', code || '');
+  // ★ 자동 로그인: localStorage에 코드 저장 (다음 접속 시 자동 입력)
+  if(code) {
+    localStorage.setItem('amt_saved_code', code);
+    localStorage.setItem('amt_saved_name', name);
+  }
   window._amtAdminName = name;
   const badge = document.getElementById('amtAdminBadge');
   if(badge) badge.textContent = '👤 '+name;
-  // 총관리자면 알림 리스너 + 수입가격 섹션 표시
   setTimeout(startSuperAdminNotifListener, 1000);
-  // ★ 수입가격 섹션 (총관리자만)
-  const isSA = String(code) === SUPER_ADMIN_CODE;
-  const impSec = document.getElementById('importPriceSection');
-  if(impSec) impSec.style.display = isSA ? 'block' : 'none';
-  if(isSA) loadImportPrices();
 }
 
 function amtAdminLogout(){
   if(!confirm(window._amtAdminName + '님 로그아웃 하시겠습니까?')) return;
   sessionStorage.removeItem(AMT_ADMIN_SESSION);
+  sessionStorage.removeItem('amt_admin_code');
   window._amtAdminName = null;
   document.getElementById('amtLoginScreen').style.display = 'flex';
-  document.getElementById('amtAdminCodeInput').value = '';
+  // ★ 로그아웃 후에도 코드 자동 입력 유지
+  const lsCode = localStorage.getItem('amt_saved_code') || '';
+  document.getElementById('amtAdminCodeInput').value = lsCode;
   document.getElementById('amtLoginMsg').textContent = '';
-}
-
-
-/* ═══════════════════════════════════════════════════════
-   수입가격 관리 (총관리자 전용)
-═══════════════════════════════════════════════════════ */
-const LS_IMPORT_PRICES = 'amt_import_prices_enc';
-let importPrices = {JUC:0, MEDIAS:0, DELL:0};
-
-async function saveImportPrices(){
-  if(!isSuperAdmin()){ toast('총관리자만 수입가격을 수정할 수 있습니다','error'); return; }
-  const juc = parseInt((document.getElementById('importJUC').value||'').replace(/,/g,''))||0;
-  const med = parseInt((document.getElementById('importMEDIAS').value||'').replace(/,/g,''))||0;
-  const dell = parseInt((document.getElementById('importDELL').value||'').replace(/,/g,''))||0;
-  importPrices = {JUC:juc, MEDIAS:med, DELL:dell};
-  // sessionStorage에만 저장 (메모리, 로그아웃 시 삭제)
-  sessionStorage.setItem('amt_import_prices', JSON.stringify(importPrices));
-  // Firebase에도 암호화 없이 저장 (총관리자 전용 경로)
-  const fb = window._fb;
-  if(fb&&fb.ready){
-    try{ await fb.set(fb.ref(fb.db,'amt_superadmin/importPrices'), {...importPrices, updatedAt:new Date().toISOString()}); }catch(e){}
-  }
-  const msg = document.getElementById('importPriceMsg');
-  if(msg){ msg.textContent='✅ 저장됨'; setTimeout(()=>msg.textContent='',3000); }
-  toast('수입가격 저장 완료! VAT 계산에 반영됩니다.','success');
-  renderVatKpiCards && renderDash && renderDash();
-}
-
-function loadImportPrices(){
-  // sessionStorage 우선
-  try{
-    const s = JSON.parse(sessionStorage.getItem('amt_import_prices')||'null');
-    if(s){ importPrices = s; _fillImportPriceUI(); return; }
-  }catch(e){}
-  // Firebase에서 로드
-  const fb = window._fb;
-  if(!fb||!fb.ready) return;
-  fb.get(fb.ref(fb.db,'amt_superadmin/importPrices')).then(snap=>{
-    if(!snap.exists()) return;
-    const d = snap.val();
-    importPrices = {JUC: d.JUC||0, MEDIAS: d.MEDIAS||0, DELL: d.DELL||0};
-    sessionStorage.setItem('amt_import_prices', JSON.stringify(importPrices));
-    _fillImportPriceUI();
-  }).catch(()=>{});
-}
-
-function _fillImportPriceUI(){
-  const setFmt = (id, val) => { const el = document.getElementById(id); if(el) el.value = val ? Number(val).toLocaleString('ko-KR') : ''; };
-  setFmt('importJUC', importPrices.JUC);
-  setFmt('importMEDIAS', importPrices.MEDIAS);
-  setFmt('importDELL', importPrices.DELL);
 }
 
 // START
 window.addEventListener('DOMContentLoaded',()=>{
-  // ★ 세션 복원: 이름과 코드 모두 정확히 복원
+  // ① 세션 복원 (탭을 닫지 않은 경우)
   const saved = sessionStorage.getItem(AMT_ADMIN_SESSION);
   const savedCode = sessionStorage.getItem('amt_admin_code') || '';
   if(saved){
     setAmtAdminSession(saved, savedCode);
   } else {
+    // ② localStorage 자동 입력 (이전에 로그인한 적 있으면 코드 자동 채움)
+    const lsCode = localStorage.getItem('amt_saved_code') || '';
+    if(lsCode){
+      const inp = document.getElementById('amtAdminCodeInput');
+      if(inp) inp.value = lsCode;
+    }
     document.getElementById('amtLoginScreen').style.display = 'flex';
   }
   init(); handleResize();
