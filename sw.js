@@ -1,5 +1,5 @@
-// AMT 매출관리 Service Worker v28
-const CACHE = 'amt-v28';
+// AMT 매출관리 Service Worker v27
+const CACHE = 'amt-v27';
 const ASSETS = [
   '/AMT/',
   '/AMT/index.html',
