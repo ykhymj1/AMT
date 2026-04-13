@@ -2646,6 +2646,15 @@ async function _doDelOrder(id){
         relAmtOrder: o.id,
         emptyStatusNote: '[AMT발주삭제]'
       });
+      // ★ KY 주문관리 탭의 로컬 데이터도 즉시 업데이트 (삭제 반영)
+      const kySnap = await window._fb.get(window._fb.ref(window._fb.db, 'ky_orders/' + relKyId));
+      if(kySnap.exists()){
+        const kyData = kySnap.val();
+        if(kyData.status === 'cancelled') applyLocalKyOrderRemoval(relKyId);
+        else applyLocalKyOrderPatch(kyData);
+      } else {
+        applyLocalKyOrderRemoval(relKyId);
+      }
     }catch(e){ console.warn('KY주문 연동삭제 실패', e); }
   }
 
@@ -2747,6 +2756,9 @@ async function saveOrderEdit(){
           memo: newMemo,
           relAmtOrder: o.id
         });
+        // ★ KY 주문관리 탭의 로컬 데이터도 즉시 업데이트
+        const kySnap = await window._fb.get(window._fb.ref(window._fb.db, 'ky_orders/' + o.relKyOrder));
+        if(kySnap.exists()) applyLocalKyOrderPatch(kySnap.val());
       }catch(e){ console.warn('KY주문 수정 연동 실패:', e); }
     }
 
