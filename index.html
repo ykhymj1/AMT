@@ -2316,7 +2316,15 @@ async function saveOrder(){
         id: kyOrderId,
         dealerId: order.dealerId,
         dealerName: order.dealerName,
-        items: [{ product: order.product, qty: order.qty, price: order.price, total: order.total }],
+        items: [{
+          product: order.product,
+          qty: order.qty,
+          price: order.price,
+          total: order.total,
+          relAmtOrder: order.id,
+          relKyProduct: order.product,
+          source: 'amt_order'
+        }],
         total: order.total + (order.fee||0),
         totalQty: order.qty,
         orderType: 'order',
@@ -2324,6 +2332,7 @@ async function saveOrder(){
         status: 'shipped',
         statusNote: 'AMT 직접 발주 입력',
         statusUpdatedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
         memo: order.memo||'',
         createdAt: order.createdAt,
         processedBy: window._amtAdminName||'─',
@@ -2633,6 +2642,7 @@ async function _doDelOrder(id){
     try{
       await syncKyOrderLine(relKyId, relKyProduct, {
         deleteLine: true,
+        relAmtOrder: o.id,
         emptyStatusNote: '[AMT발주삭제]'
       });
     }catch(e){ console.warn('KY주문 연동삭제 실패', e); }
@@ -2733,7 +2743,8 @@ async function saveOrderEdit(){
           qty: newQty,
           price: newPrice,
           orderDate: newDate,
-          memo: newMemo
+          memo: newMemo,
+          relAmtOrder: o.id
         });
       }catch(e){ console.warn('KY주문 수정 연동 실패:', e); }
     }
@@ -6069,6 +6080,29 @@ function normalizeKyOrderItems(items){
   }).filter(i=>i.product && i.qty > 0);
 }
 
+function normalizeKyProductKey(value){
+  return String(value||'').replace(/\s+/g,'').trim().toUpperCase();
+}
+
+function sortKyOrdersDesc(list){
+  return [...(list||[])].sort((a,b)=>(b.createdAt||b.updatedAt||'').localeCompare(a.createdAt||a.updatedAt||'') || (b.orderDate||'').localeCompare(a.orderDate||''));
+}
+
+function applyLocalKyOrderPatch(nextPayload){
+  if(typeof kyAllOrders === 'undefined' || !nextPayload || !nextPayload.id) return;
+  const idx = kyAllOrders.findIndex(o => o.id === nextPayload.id);
+  if(idx >= 0) kyAllOrders[idx] = nextPayload;
+  else kyAllOrders.unshift(nextPayload);
+  kyAllOrders = sortKyOrdersDesc(kyAllOrders);
+  try{
+    kyUpdateDealerFilter();
+    kyApplyFilter();
+    kyUpdateKpi(kyAllOrders);
+  }catch(err){
+    console.warn('KY 로컬 화면 갱신 실패:', err);
+  }
+}
+
 async function syncKyOrderLine(relKyOrderId, product, options={}){
   const fb = window._fb;
   if(!relKyOrderId || !product || !fb || !fb.ready) return false;
@@ -6079,7 +6113,15 @@ async function syncKyOrderLine(relKyOrderId, product, options={}){
   const kyOrder = snap.val();
   const now = new Date().toISOString();
   const oldItems = normalizeKyOrderItems(kyOrder.items||[]);
-  const match = item => (item.product||'') === product;
+  const productKey = normalizeKyProductKey(product);
+  const linkedAmtOrderId = options.relAmtOrder || kyOrder.relAmtOrder || null;
+  const canFallbackSingleLine = !!(linkedAmtOrderId && (kyOrder.fromAmt || kyOrder.relAmtOrder===linkedAmtOrderId) && oldItems.length===1);
+  const match = item => {
+    const sameProduct = normalizeKyProductKey(item.product) === productKey;
+    const sameLinkedOrder = !!(linkedAmtOrderId && (item.relAmtOrder===linkedAmtOrderId || kyOrder.relAmtOrder===linkedAmtOrderId));
+    return sameProduct || sameLinkedOrder;
+  };
+
   let nextItems;
 
   if(options.deleteLine){
@@ -6093,15 +6135,45 @@ async function syncKyOrderLine(relKyOrderId, product, options={}){
       const price = Number(options.price ?? item.price) || 0;
       return {
         ...item,
+        product: item.product || product,
         qty,
         price,
-        total: qty * price
+        total: qty * price,
+        relAmtOrder: linkedAmtOrderId || item.relAmtOrder || null,
+        relKyProduct: item.relKyProduct || item.product || product,
+        source: item.source || (kyOrder.fromAmt ? 'amt_order' : 'linked_order')
       };
     });
+
+    if(!touched && canFallbackSingleLine && Number(options.qty) > 0){
+      const base = oldItems[0] || {};
+      const qty = Math.abs(Number(options.qty) || 0);
+      const price = Number(options.price ?? base.price) || 0;
+      nextItems = [{
+        ...base,
+        product: base.product || product,
+        qty,
+        price,
+        total: qty * price,
+        relAmtOrder: linkedAmtOrderId || base.relAmtOrder || null,
+        relKyProduct: base.relKyProduct || base.product || product,
+        source: base.source || 'amt_order'
+      }];
+      touched = true;
+    }
+
     if(!touched && Number(options.qty) > 0){
       const qty = Math.abs(Number(options.qty) || 0);
       const price = Number(options.price) || 0;
-      nextItems.push({ product, qty, price, total: qty * price });
+      nextItems.push({
+        product,
+        qty,
+        price,
+        total: qty * price,
+        relAmtOrder: linkedAmtOrderId,
+        relKyProduct: product,
+        source: kyOrder.fromAmt ? 'amt_order' : 'linked_order'
+      });
     }
   }
 
@@ -6110,6 +6182,7 @@ async function syncKyOrderLine(relKyOrderId, product, options={}){
   const itemTotal = nextItems.reduce((s,i)=>s+(Number(i.total)||0),0);
   const nextPayload = {
     ...kyOrder,
+    relAmtOrder: linkedAmtOrderId,
     items: nextItems,
     total: nextItems.length ? itemTotal + extraAmount : 0,
     totalQty: nextItems.reduce((s,i)=>s+(Number(i.qty)||0),0),
@@ -6126,6 +6199,7 @@ async function syncKyOrderLine(relKyOrderId, product, options={}){
   }
 
   await fb.set(fb.ref(fb.db,'ky_orders/'+relKyOrderId), nextPayload);
+  applyLocalKyOrderPatch(nextPayload);
   return true;
 }
 
@@ -7236,7 +7310,7 @@ window.addEventListener('DOMContentLoaded',()=>{
 // PWA Service Worker 등록 (github.io 배포 환경에서만)
 if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/AMT/sw.js')
+    navigator.serviceWorker.register('/AMT/sw.js?v=20260413-hotfix2')
       .then(r=>console.log('[AMT SW] 등록 완료:', r.scope))
       .catch(e=>console.log('[AMT SW] 등록 스킵:', e.message));
   });
