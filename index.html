@@ -6881,8 +6881,8 @@ window.addEventListener('DOMContentLoaded',()=>{
 // PWA Service Worker 등록 (github.io 배포 환경에서만)
 if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/AMT/sw.js')
-      .then(r=>console.log('[AMT SW] 등록 완료:', r.scope))
+    navigator.serviceWorker.register('/AMT/sw.js', { updateViaCache: 'none' })
+      .then(r=>{ console.log('[AMT SW] 등록 완료:', r.scope); r.update(); })
       .catch(e=>console.log('[AMT SW] 등록 스킵:', e.message));
   });
 }
