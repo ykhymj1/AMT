@@ -2631,7 +2631,8 @@ async function _doDelOrder(id){
   if(!o) return;
   if(o) addAuditLog('delete','발주',`삭제: ${o.dealerName} ${o.product} ${fmt(o.qty)}개 ${fmt(o.total)}원 (발주일:${o.orderDate})`,o);
 
-  const relKyId = o.relKyOrder || null;
+  // ★ relKyOrder 없으면 'ky_from_amt_' + id 패턴으로 추론
+  const relKyId = o.relKyOrder || ('ky_from_amt_' + id);
   const relKyProduct = o.relKyProduct || o.product || null;
 
   invLogs = invLogs.filter(i => i.relOrder !== id);
@@ -2641,11 +2642,18 @@ async function _doDelOrder(id){
 
   if(relKyId && relKyProduct){
     try{
-      await syncKyOrderLine(relKyId, relKyProduct, {
-        deleteLine: true,
-        relAmtOrder: o.id,
-        emptyStatusNote: '[AMT발주삭제]'
-      });
+      // Firebase에 KY주문 존재 여부 확인 후 삭제
+      const fb2 = window._fb;
+      if(fb2 && fb2.ready){
+        const chk = await fb2.get(fb2.ref(fb2.db,'ky_orders/'+relKyId));
+        if(chk.exists()){
+          await syncKyOrderLine(relKyId, relKyProduct, {
+            deleteLine: true,
+            relAmtOrder: id,
+            emptyStatusNote: '[AMT발주삭제]'
+          });
+        }
+      }
     }catch(e){ console.warn('KY주문 연동삭제 실패', e); }
   }
 
@@ -2738,15 +2746,27 @@ async function saveOrderEdit(){
     saveLS();
     await fbSaveAll();
 
-    if(o.relKyOrder){
+    // ★ relKyOrder가 없으면 'ky_from_amt_' + order.id 패턴으로 추론
+    const kyOrderId = o.relKyOrder || ('ky_from_amt_' + _editOrderId);
+    const kyProduct = o.relKyProduct || o.product;
+    if(kyOrderId){
       try{
-        await syncKyOrderLine(o.relKyOrder, o.relKyProduct || o.product, {
-          qty: newQty,
-          price: newPrice,
-          orderDate: newDate,
-          memo: newMemo,
-          relAmtOrder: o.id
-        });
+        // Firebase에 KY주문 존재 여부 확인 후 sync
+        const fb2 = window._fb;
+        if(fb2 && fb2.ready){
+          const chk = await fb2.get(fb2.ref(fb2.db,'ky_orders/'+kyOrderId));
+          if(chk.exists()){
+            // relKyOrder 저장 (없었다면 보완)
+            if(!o.relKyOrder){ o.relKyOrder = kyOrderId; }
+            await syncKyOrderLine(kyOrderId, kyProduct, {
+              qty: newQty,
+              price: newPrice,
+              orderDate: newDate,
+              memo: newMemo,
+              relAmtOrder: o.id
+            });
+          }
+        }
       }catch(e){ console.warn('KY주문 수정 연동 실패:', e); }
     }
 
