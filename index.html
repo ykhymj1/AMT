@@ -2339,7 +2339,7 @@ async function saveOrder(){
         fromAmt: true,
         relAmtOrder: order.id
       };
-      await fb.set(fb.ref(fb.db,'ky_orders/'+kyOrderId), kyOrder);
+      awai      await fb.set(fb.ref(fb.db,'ky_orders/'+kyOrderId), kyOrder);
       await markKyMutation('create_from_amt', kyOrderId, { relAmtOrder: order.id, dealerId: order.dealerId });
       order.relKyOrder = kyOrderId;
       order.relKyProduct = product;
@@ -2348,11 +2348,15 @@ async function saveOrder(){
         linkedInv.relKyOrder = kyOrderId;
         linkedInv.relKyProduct = product;
       }
+      // ★ KY 주문관리 탭의 로컬 데이터도 즉시 업데이트
+      applyLocalKyOrderPatch(kyOrder);
+      // ★ relKyOrder 정보를 포함하여 다시 저장
+      saveLS();
       await fbSaveAll();
     }catch(e){ console.warn('KY주문 자동등록 실패:', e); }
   }
 
-  toast(`발주 저장 완료 ✓ 수금예정: ${dueDate}`,'success');
+  toast(`발주 저장 완료 ✓ 수금예정: ${dueDate}`,'success');e}`,'success');
   document.getElementById('oMsg').textContent=`저장됨 · 수금예정 ${dueDate}`;
   setTimeout(()=>document.getElementById('oMsg').textContent='',4000);
   document.getElementById('oQty').value='';
@@ -2639,21 +2643,25 @@ async function _doDelOrder(id){
   saveLS();
   await fbSaveAll();
 
-  if(relKyId && relKyProduct){
+  // ★ 연동된 KY 주문이 있다면 (수동 입력 발주 포함)
+  const targetKyId = relKyId || (o.id ? 'ky_from_amt_' + o.id : null);
+  if(targetKyId){
     try{
-      await syncKyOrderLine(relKyId, relKyProduct, {
+      await syncKyOrderLine(targetKyId, relKyProduct || o.product, {
         deleteLine: true,
         relAmtOrder: o.id,
         emptyStatusNote: '[AMT발주삭제]'
       });
-      // syncKyOrderLine 내부에서 cancelled 처리 → 로컬에서도 즉시 제거
-      applyLocalKyOrderRemoval(relKyId);
+      // ★ KY 주문관리 탭의 로컬 데이터도 즉시 업데이트 (삭제 반영)
+      const kySnap = await window._fb.get(window._fb.ref(window._fb.db, 'ky_orders/' + targetKyId));
+      if(kySnap.exists()){
+        const kyData = kySnap.val();
+        if(kyData.status === 'cancelled') applyLocalKyOrderRemoval(targetKyId);
+        else applyLocalKyOrderPatch(kyData);
+      } else {
+        applyLocalKyOrderRemoval(targetKyId);
+      }
     }catch(e){ console.warn('KY주문 연동삭제 실패', e); }
-  } else {
-    // relKyOrder 없는 수동입력 발주도 KY-order 앱에 변경 알림
-    try{
-      await markKyMutation('delete_order_amt', o.id, { dealerId: o.dealerId || '', dealerName: o.dealerName || '' });
-    }catch(e){ console.warn('KY mutation 알림 실패', e); }
   }
 
   toast('발주 삭제 완료 (KY주문 자동 반영됨)','info');
@@ -2745,23 +2753,21 @@ async function saveOrderEdit(){
     saveLS();
     await fbSaveAll();
 
-    if(o.relKyOrder){
+    // ★ 연동된 KY 주문이 있다면 (수동 입력 발주 포함)
+    const relKyId = o.relKyOrder || (o.id ? 'ky_from_amt_' + o.id : null);
+    if(relKyId){
       try{
-        await syncKyOrderLine(o.relKyOrder, o.relKyProduct || o.product, {
+        await syncKyOrderLine(relKyId, o.relKyProduct || o.product, {
           qty: newQty,
           price: newPrice,
           orderDate: newDate,
           memo: newMemo,
           relAmtOrder: o.id
         });
-        // syncKyOrderLine 내부의 applyLocalKyOrderPatch 외에 필터도 즉시 갱신
-        try{ kyApplyFilter(); }catch(_){}
+        // ★ KY 주문관리 탭의 로컬 데이터도 즉시 업데이트
+        const kySnap = await window._fb.get(window._fb.ref(window._fb.db, 'ky_orders/' + relKyId));
+        if(kySnap.exists()) applyLocalKyOrderPatch(kySnap.val());
       }catch(e){ console.warn('KY주문 수정 연동 실패:', e); }
-    } else {
-      // relKyOrder 없는 수동입력 발주 수정 시에도 KY-order 앱에 변경 알림
-      try{
-        await markKyMutation('edit_amt_order', o.id, { dealerId: o.dealerId || '', dealerName: o.dealerName || '' });
-      }catch(e){ console.warn('KY mutation 알림 실패:', e); }
     }
 
     closeOrderEdit();
@@ -5906,11 +5912,7 @@ let _kyAdminInited = false;
 const KY_MUTATION_META_PATH = 'ky_orders_meta/lastMutation';
 
 function initKyAdmin(){
-  // 이미 초기화된 경우: 탭 재진입 시 최신 데이터로 즉시 갱신
-  if(_kyAdminInited){
-    queueKyReload('tab_reenter', 0);
-    return;
-  }
+  if(_kyAdminInited) return;
   _kyAdminInited = true;
   const fb = window._fb;
   if(!fb || !fb.ready){
@@ -6291,12 +6293,7 @@ async function syncKyOrderLine(relKyOrderId, product, options={}){
 
   await fb.set(fb.ref(fb.db,'ky_orders/'+relKyOrderId), nextPayload);
   await markKyMutation(options.deleteLine ? 'delete_line' : 'edit_line', relKyOrderId, { product, dealerId: kyOrder.dealerId || '' });
-  // cancelled 상태(항목 전체 삭제)이면 목록에서 즉시 제거, 아니면 패치
-  if(nextPayload.status === 'cancelled'){
-    applyLocalKyOrderRemoval(relKyOrderId);
-  } else {
-    applyLocalKyOrderPatch(nextPayload);
-  }
+  applyLocalKyOrderPatch(nextPayload);
   return true;
 }
 
@@ -7410,7 +7407,7 @@ window.addEventListener('DOMContentLoaded',()=>{
 // PWA Service Worker 등록 (github.io 배포 환경에서만)
 if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/AMT/sw.js?v=20260413-hotfix4')
+    navigator.serviceWorker.register('/AMT/sw.js?v=20260413-hotfix3')
       .then(r=>console.log('[AMT SW] 등록 완료:', r.scope))
       .catch(e=>console.log('[AMT SW] 등록 스킵:', e.message));
   });
