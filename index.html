@@ -2014,10 +2014,20 @@ function prevBizDay(ds){
   return cur;
 }
 
+// ★ 날짜가 토/일/공휴일이면 다음 영업일로 이동
+function nextBizDay(ds){
+  let cur = ds;
+  while(isNonBizDay(cur)){
+    cur = addDays(cur, 1);
+  }
+  return cur;
+}
+
 // eom: 말일 계산 후 토요일/공휴일 조정
 function eomBiz(y, m){
   const lastDay = eom(y, m);
-  return prevBizDay(lastDay);
+  // ★ 말일이 토/일/공휴일이면 다음 영업일 (요구사항: 휴일 다음날)
+  return nextBizDay(lastDay);
 }
 
 function calcDue(orderDate, term, dealerId){
@@ -2029,8 +2039,8 @@ function calcDue(orderDate, term, dealerId){
     return fmtDateLocal(due);
   }
   switch(term){
-    case 'same':      return orderDate;
-    case 'same_next': return orderDate; // 보수적: 당일
+    case 'same':      return nextBizDay(orderDate);
+    case 'same_next': { const nx = addDays(orderDate,1); return nextBizDay(nx); }
     case 'eom':       return eomBiz(y, m);           // 말일 → 토/공휴일이면 전날
     case 'eom_next':  return m===12 ? eomBiz(y+1,1) : eomBiz(y, m+1); // 다음달 말일 동일 적용
     default:          return orderDate;
@@ -6651,14 +6661,20 @@ async function kyAutoUpdateOnReturn(order, note, now){
 
 
 function calcKyDue(orderDate, term){
-  const d = new Date(orderDate);
+  // ★ nextBizDay 적용 — 모든 수금일이 토/일/공휴일이면 다음 영업일
+  const d = parseDateLocal ? parseDateLocal(orderDate) : new Date(orderDate+'T00:00:00');
   const y = d.getFullYear(), m = d.getMonth();
-  if(term==='same') return orderDate;
-  if(term==='same_next'){ const n=new Date(d); n.setDate(n.getDate()+1); return n.toISOString().slice(0,10); }
-  if(term==='eom') return new Date(y,m+1,0).toISOString().slice(0,10);
-  if(term==='eom_next') return new Date(y,m+2,0).toISOString().slice(0,10);
-  if(term==='3m_19') return new Date(y,m+3,19).toISOString().slice(0,10);
-  return new Date(y,m+2,0).toISOString().slice(0,10);
+  const fmt = ds => (typeof fmtDateLocal==='function') ? fmtDateLocal(new Date(ds+'T00:00:00')) : ds;
+  const nbd = ds => (typeof nextBizDay==='function') ? nextBizDay(ds) : ds;
+  if(term==='same') return nbd(orderDate);
+  if(term==='same_next'){
+    const n = new Date(d); n.setDate(n.getDate()+1);
+    return nbd(n.toISOString().slice(0,10));
+  }
+  if(term==='eom') return nbd(new Date(y,m+1,0).toISOString().slice(0,10));
+  if(term==='eom_next') return nbd(new Date(y,m+2,0).toISOString().slice(0,10));
+  if(term==='3m_19') return nbd(new Date(y,m+3,19).toISOString().slice(0,10));
+  return nbd(new Date(y,m+2,0).toISOString().slice(0,10));
 }
 
 function kyCloseDetail(){
@@ -6975,11 +6991,14 @@ async function requireOtp(actionLabel, callback){
       https://api.telegram.org/bot{토큰}/getUpdates 접속 → chat.id 확인
    3. 아래 TELEGRAM_BOT_TOKEN, SUPER_ADMIN_CHAT_ID 에 입력
 ═══════════════════════════════════════════════════════ */
-const TELEGRAM_BOT_TOKEN  = '8615303756:AAEWCz82f6LBzgBx769v1xbUkJ6SOM7rpjk';  // KY 주문 봇
-const SUPER_ADMIN_CHAT_ID = '1988388217';  // 총관리자 채팅 ID
-// 나중에 추가할 관리자 채팅 ID (현재 미사용)
-// const ADMIN2_CHAT_ID = '';
-// const ADMIN3_CHAT_ID = '';
+const TELEGRAM_BOT_TOKEN  = '8615303756:AAEWCz82f6LBzgBx769v1xbUkJ6SOM7rpjk';  // 총관리자 봇
+const SUPER_ADMIN_CHAT_ID = '1988388217';  // 총관리자 채팅 ID (유경호)
+
+// ★ 일반관리자 텔레그램 (주문신청 + 코드문의 알림만 수신)
+const ADMIN2_BOT_TOKEN  = '8571539059:AAG1BU5DH2h9Q0qoJk-46a2p3FfYkdEYnvI'; // 김진아 봇
+const ADMIN2_CHAT_ID    = '8505927461';   // 김진아
+const ADMIN3_BOT_TOKEN  = '8371712654:AAFFSRwDWBokRdcj8TVIWW4kC45J3bcoXvI'; // 강승섭 봇
+const ADMIN3_CHAT_ID    = '1740618685';   // 강승섭
 
 /* 텔레그램 메시지 전송 공통 함수 */
 async function sendTelegram(chatId, text){
@@ -6998,6 +7017,25 @@ async function sendTelegram(chatId, text){
     else console.log('[텔레그램] 발송 완료 → chat_id:', chatId);
   } catch(e){
     console.warn('[텔레그램] 오류:', e.message);
+  }
+}
+
+/* ★ 일반관리자에게 주문/코드문의 알림 전송 */
+async function sendTelegramToAdmins(text){
+  // 각 관리자의 봇이 별도이므로 각 봇으로 각각 전송
+  const admins = [
+    { token: ADMIN2_BOT_TOKEN, chatId: ADMIN2_CHAT_ID, name: '김진아' },
+    { token: ADMIN3_BOT_TOKEN, chatId: ADMIN3_CHAT_ID, name: '강승섭' },
+  ];
+  for(const admin of admins){
+    if(!admin.token || !admin.chatId) continue;
+    try{
+      await fetch('https://api.telegram.org/bot' + admin.token + '/sendMessage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: admin.chatId, text: text, parse_mode: 'HTML' })
+      });
+    }catch(e){ console.warn('[텔레그램-' + admin.name + '] 실패:', e.message); }
   }
 }
 
@@ -7405,11 +7443,13 @@ window.addEventListener('DOMContentLoaded',()=>{
 });
 
 // PWA Service Worker 등록 (github.io 배포 환경에서만)
-if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
+// GitHub Pages + Netlify 모두 지원
+if('serviceWorker' in navigator){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/AMT/sw.js?v=20260413-hotfix3')
-      .then(r=>console.log('[AMT SW] 등록 완료:', r.scope))
-      .catch(e=>console.log('[AMT SW] 등록 스킵:', e.message));
+    const swPath = location.hostname.endsWith('github.io') ? '/AMT/sw.js' : '/sw.js';
+    navigator.serviceWorker.register(swPath + '?v=20260414-netlify1')
+      .then(r=>console.log('[AMT SW] 등록:', r.scope))
+      .catch(e=>console.log('[AMT SW] 스킵:', e.message));
   });
 }
 </script>

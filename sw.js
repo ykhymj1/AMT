@@ -1,6 +1,6 @@
-// AMT 알림 Service Worker v20260413-hotfix4
-const CACHE = 'amt-v20260413-hotfix4';
-const APP_ROOT = '/AMT';
+// AMT 알림 Service Worker v20260413-netlify1
+const CACHE = 'amt-v20260414-netlify1';
+const APP_ROOT = '';  // Netlify 루트 배포
 const ASSETS = [
   APP_ROOT + '/',
   APP_ROOT + '/index.html',

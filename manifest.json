@@ -1,9 +1,9 @@
 {
   "name": "AMT 매출관리",
   "short_name": "AMT",
-  "description": "매출관리 시스템",
-  "start_url": "/AMT/",
-  "scope": "/AMT/",
+  "description": "AMT·KY 매출관리 시스템",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#1d4ed8",
