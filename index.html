@@ -2036,7 +2036,7 @@ function calcDue(orderDate, term, dealerId){
   if(dealerId==='chungu'||term==='3m_19'){
     const due=parseDateLocal(orderDate);
     due.setMonth(due.getMonth()+3); due.setDate(19);
-    return fmtDateLocal(due);
+    return nextBizDay(fmtDateLocal(due));
   }
   switch(term){
     case 'same':      return nextBizDay(orderDate);
@@ -5943,6 +5943,32 @@ function kySetSync(on, label){
   if(label) lb.textContent = label;
 }
 
+/* ═══ KY 신규주문 알림 소리 ═══ */
+function playKyOrderSound(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    // 3단 알림음: 높은음 → 더높은음 → 최고음
+    const notes = [
+      {freq:880, start:0,    dur:0.12},
+      {freq:1100,start:0.14, dur:0.12},
+      {freq:1320,start:0.28, dur:0.22}
+    ];
+    notes.forEach(({freq,start,dur}) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, ctx.currentTime + start);
+      gain.gain.linearRampToValueAtTime(0.45, ctx.currentTime + start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
+      osc.start(ctx.currentTime + start);
+      osc.stop(ctx.currentTime + start + dur + 0.05);
+    });
+  } catch(e){ console.warn('알림음 재생 실패:', e); }
+}
+
 /* ═══ KY 신규주문 팝업 창 ═══ */
 function showKyNewOrderPopup(order){
   const old = document.getElementById('kyNewOrderPopup');
@@ -5990,6 +6016,7 @@ function showKyNewOrderPopup(order){
     </div>
   `;
   document.body.appendChild(popup);
+  playKyOrderSound();
 }
 
 function kyStartListener(){
@@ -6752,6 +6779,11 @@ async function saveOneAdminCode(name){
   const newCode = (document.getElementById('acode_'+name).value||'').trim();
   if(!newCode){ alert('코드를 입력하세요'); return; }
   await fb.set(fb.ref(fb.db,'amt_pw/'+name), newCode);
+  // ★ 현재 로그인한 사람의 코드가 변경된 경우 세션도 업데이트 (총괄관리자 권한 유지)
+  if(window._amtAdminName && window._amtAdminName === name){
+    sessionStorage.setItem('amt_admin_code', newCode);
+    localStorage.setItem('amt_saved_code', newCode);
+  }
   toast('✅ '+name+' 코드 저장됨','success');
 }
 
@@ -7176,37 +7208,72 @@ function startSuperAdminNotifListener(){
     const notifs = snap.val();
     const unread = Object.values(notifs).filter(n => !n.read);
 
-    unread.forEach(n => {
-      const key = 'shown_' + (n.id || n.at || n.message || '');
-      if(sessionStorage.getItem(key)) return;
-      sessionStorage.setItem(key, '1');
+    // ★ 팝업은 타입별로 가장 최근 알림 1개만 표시
+    const sortByTime = (a, b) => (b.at||'').localeCompare(a.at||'');
 
-      if(n.type === 'otp_request'){
-        if(isSuperAdmin()) showSuperAdminNotif(n);
-      } else if(n.type === 'code_request'){
+    // code_request: 가장 최근 1개만
+    const codeReqs = unread.filter(n => n.type === 'code_request').sort(sortByTime);
+    if(codeReqs.length > 0){
+      const n = codeReqs[0];
+      const key = 'shown_' + (n.id || n.at || n.message || '');
+      if(!sessionStorage.getItem(key)){
+        sessionStorage.setItem(key, '1');
         showCodeRequestPopup(n);
         if(Notification && Notification.permission === 'granted'){
           new Notification('🔑 대리점 코드 요청', {
             body: (n.message||'').replace('[코드요청] ','') || '새 코드 요청이 도착했습니다.',
             icon: '/AMT/icon-192.png',
-            tag: 'code-request-' + (n.at||''),
+            tag: 'code-request-latest',
             requireInteraction: true
           });
         }
-      } else if(n.type === 'ky_order'){
+      }
+    }
+
+    // otp_request: 가장 최근 1개만 (총관리자)
+    if(isSuperAdmin()){
+      const otpReqs = unread.filter(n => n.type === 'otp_request').sort(sortByTime);
+      if(otpReqs.length > 0){
+        const n = otpReqs[0];
+        const key = 'shown_' + (n.id || n.at || n.message || '');
+        if(!sessionStorage.getItem(key)){
+          sessionStorage.setItem(key, '1');
+          showSuperAdminNotif(n);
+        }
+      }
+    }
+
+    // ky_order: 가장 최근 1개만
+    const kyOrders = unread.filter(n => n.type === 'ky_order').sort(sortByTime);
+    if(kyOrders.length > 0){
+      const n = kyOrders[0];
+      const key = 'shown_' + (n.id || n.at || n.message || '');
+      if(!sessionStorage.getItem(key)){
+        sessionStorage.setItem(key, '1');
         showKyOrderNotif(n);
         if(Notification && Notification.permission === 'granted'){
           new Notification('📦 KY 주문 상태 변경', {
             body: n.message || '',
             icon: '/AMT/icon-192.png',
-            tag: 'ky-order-' + (n.orderId||''),
+            tag: 'ky-order-latest',
             requireInteraction: false
           });
         }
-      } else {
-        if(isSuperAdmin()) showSuperAdminNotif(n);
       }
-    });
+    }
+
+    // 기타 알림 (총관리자): 가장 최근 1개만
+    if(isSuperAdmin()){
+      const others = unread.filter(n => !['otp_request','code_request','ky_order'].includes(n.type)).sort(sortByTime);
+      if(others.length > 0){
+        const n = others[0];
+        const key = 'shown_' + (n.id || n.at || n.message || '');
+        if(!sessionStorage.getItem(key)){
+          sessionStorage.setItem(key, '1');
+          showSuperAdminNotif(n);
+        }
+      }
+    }
 
     if(isSuperAdmin()){
       const otpUnread = unread.filter(n => n.type === 'otp_request');
@@ -7242,6 +7309,7 @@ function showKyOrderNotif(n){
       style="width:100%;padding:6px;border-radius:6px;border:none;background:rgba(255,255,255,.15);color:#fff;cursor:pointer;font-size:.78rem">닫기</button>
   `;
   document.body.appendChild(popup);
+  playKyOrderSound();
   setTimeout(() => { const el = document.getElementById('kyOrderNotifPopup'); if(el) el.remove(); }, 15000);
 }
 
@@ -7351,13 +7419,67 @@ function updateSuperAdminBadge(count){
   if(!badge){
     const badgeEl = document.createElement('span');
     badgeEl.id = 'superAdminNotifBadge';
-    badgeEl.style.cssText = 'background:#ef4444;color:#fff;padding:2px 6px;border-radius:10px;font-size:.65rem;font-weight:700;margin-left:4px';
+    badgeEl.style.cssText = 'background:#ef4444;color:#fff;padding:2px 6px;border-radius:10px;font-size:.65rem;font-weight:700;margin-left:4px;cursor:pointer';
+    badgeEl.title = '알림 목록 보기';
+    badgeEl.onclick = function(e){ e.stopPropagation(); showNotifList(); };
     const adminBadge = document.getElementById('amtAdminBadge');
     if(adminBadge) adminBadge.appendChild(badgeEl);
     badge = badgeEl;
   }
   badge.textContent = count > 0 ? count : '';
   badge.style.display = count > 0 ? 'inline' : 'none';
+}
+
+// ★ 알림 목록 패널 표시
+function showNotifList(){
+  const existing = document.getElementById('notifListPanel');
+  if(existing){ existing.remove(); return; }
+
+  const fb = window._fb;
+  if(!fb||!fb.ready){ toast('Firebase 미연결','error'); return; }
+
+  const panel = document.createElement('div');
+  panel.id = 'notifListPanel';
+  panel.style.cssText = 'position:fixed;top:60px;right:12px;z-index:10010;width:min(92vw,360px);max-height:70vh;overflow-y:auto;background:#fff;border:2px solid #2563eb;border-radius:16px;box-shadow:0 12px 40px rgba(37,99,235,.25);font-size:.82rem';
+
+  panel.innerHTML = '<div style="padding:12px 16px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center"><b>🔔 알림 목록</b><button onclick="document.getElementById(\x27notifListPanel\x27).remove()" style="background:none;border:none;color:#fff;font-size:1.1rem;cursor:pointer">✕</button></div><div id="notifListBody" style="padding:10px 12px">불러오는 중...</div>';
+  document.body.appendChild(panel);
+
+  fb.get(fb.ref(fb.db,'amt_notifications')).then(snap => {
+    const body = document.getElementById('notifListBody');
+    if(!body) return;
+    if(!snap.exists()){ body.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:16px">알림 없음</div>'; return; }
+    const notifs = Object.entries(snap.val())
+      .map(([id, n]) => ({...n, _key: id}))
+      .filter(n => !n.read)
+      .sort((a,b) => (b.at||'').localeCompare(a.at||''));
+    if(!notifs.length){ body.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:16px">읽지 않은 알림 없음</div>'; return; }
+    body.innerHTML = notifs.map(n => {
+      const at = n.at ? new Date(n.at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+      const typeLabel = {otp_request:'🔐 OTP', code_request:'🔑 코드요청', ky_order:'📦 KY주문'}[n.type] || '🔔 알림';
+      const msg = (n.message||'').replace('[코드요청] ','').replace('[OTP요청] ','');
+      return `<div style="border:1px solid #e0e7ff;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#f8faff">
+        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+          <span style="font-weight:700;color:#2563eb">${typeLabel}</span>
+          <span style="color:#9ca3af;font-size:.72rem">${at}</span>
+        </div>
+        <div style="color:#1e3a8a;font-weight:600">${msg}</div>
+        <button onclick="markNotifRead('${n._key}')" style="margin-top:6px;font-size:.7rem;padding:3px 8px;border:1px solid #bfdbfe;border-radius:6px;background:#eff6ff;color:#1d4ed8;cursor:pointer">읽음 처리</button>
+      </div>`;
+    }).join('');
+  }).catch(() => {
+    const body = document.getElementById('notifListBody');
+    if(body) body.innerHTML = '<div style="color:#ef4444;text-align:center;padding:16px">알림 로드 실패</div>';
+  });
+}
+
+async function markNotifRead(key){
+  const fb = window._fb;
+  if(!fb||!fb.ready) return;
+  await fb.set(fb.ref(fb.db,'amt_notifications/'+key+'/read'), true);
+  const existing = document.getElementById('notifListPanel');
+  if(existing) existing.remove();
+  showNotifList();
 }
 
 
