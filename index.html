@@ -4906,19 +4906,16 @@ function migrateDueDates(){
     const d = dealers.find(x => x.id === o.dealerId);
     if(!d) return;
     const term = d.term || o.term;
-    const needsTermRecalc = !!(term && ['eom','eom_next','3m_19'].includes(term));
-    const dueNeedsBizFix = !!(o.dueDate && isNonBizDay(o.dueDate));
-    const origNeedsBizFix = !!(o.originalDueDate && isNonBizDay(o.originalDueDate));
-    if(!needsTermRecalc && !dueNeedsBizFix && !origNeedsBizFix) return;
-
-    const recalc = needsTermRecalc ? calcDue(o.orderDate, term, o.dealerId) : (o.originalDueDate || o.dueDate || '');
-    if(!recalc) return;
-
-    if(o.originalDueDate && (o.originalDueDate !== recalc || origNeedsBizFix)){
+    // ★ 3m_19(청구성심 포함) + eom/eom_next 모두 처리
+    if(!term || !['eom','eom_next','3m_19'].includes(term)) return;
+    if(!o.orderDate) return;
+    // originalDueDate: 수금조건 기준 원래 예정일 (재계산 대상)
+    const recalc = calcDue(o.orderDate, term, o.dealerId);
+    // originalDueDate가 있으면 그것을 보정, 없으면 dueDate 보정
+    if(o.originalDueDate && o.originalDueDate !== recalc){
       o.originalDueDate = recalc;
       changed++;
-    }
-    if(o.status !== 'done' && (!o.originalDueDate || dueNeedsBizFix || o.dueDate !== recalc)){
+    } else if(!o.originalDueDate && o.status !== 'done' && o.dueDate !== recalc){
       o.dueDate = recalc;
       changed++;
     }
@@ -4927,7 +4924,6 @@ function migrateDueDates(){
     console.log(`[dueDate 재계산] ${changed}건 수금예정일 업데이트 (토/일/공휴일 조정)`);
     saveLS();
   }
-  return changed;
 }
 
 async function fbSaveAll(){
@@ -5013,10 +5009,6 @@ function _applyRemote(remote){
   localStorage.setItem('amt_updatedAt', now);
   saveLS();
   setLastSync(now);
-  const dueChanged = migrateDueDates();
-  if(dueChanged > 0){
-    Promise.resolve().then(()=>fbSaveAll()).catch(err=>console.warn('dueDate remote 보정 업로드 실패', err));
-  }
 }
 
 // 실시간 리스너 등록 (다른 기기 변경사항 자동 수신)
@@ -6257,8 +6249,7 @@ async function syncKyOrderLine(relKyOrderId, product, options={}){
   const linkedAmtOrderId = options.relAmtOrder || kyOrder.relAmtOrder || null;
   const canFallbackSingleLine = !!(linkedAmtOrderId && (kyOrder.fromAmt || kyOrder.relAmtOrder===linkedAmtOrderId) && oldItems.length===1);
   const match = item => {
-    const itemKeys = [item.product, item.relKyProduct].map(v=>normalizeKyProductKey(v)).filter(Boolean);
-    const sameProduct = itemKeys.includes(productKey);
+    const sameProduct = normalizeKyProductKey(item.product) === productKey;
     const sameLinkedOrder = !!(linkedAmtOrderId && (item.relAmtOrder===linkedAmtOrderId || kyOrder.relAmtOrder===linkedAmtOrderId));
     return sameProduct || sameLinkedOrder;
   };
@@ -6267,9 +6258,6 @@ async function syncKyOrderLine(relKyOrderId, product, options={}){
 
   if(options.deleteLine){
     nextItems = oldItems.filter(item => !match(item));
-    if(nextItems.length === oldItems.length && canFallbackSingleLine && oldItems.length === 1){
-      nextItems = [];
-    }
   } else {
     let touched = false;
     nextItems = oldItems.map(item => {
@@ -6393,12 +6381,12 @@ function kyRenderOrders(list){
           <button class="btn btn-success" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','accepted')">✅ 접수</button>
           ${o.orderType==='return'?
             `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem;color:#16a34a;border-color:#16a34a" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
-            `<button class="btn btn-primary" style="padding:8px 18px;font-size:.88rem;font-weight:800;background:#2563eb;border-color:#2563eb;color:#fff" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고</button>`
+            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고</button>`
           }
         `:o.status==='accepted'?`
           ${o.orderType==='return'?
             `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem;color:#16a34a;border-color:#16a34a" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
-            `<button class="btn btn-primary" style="padding:8px 18px;font-size:.88rem;font-weight:800;background:#2563eb;border-color:#2563eb;color:#fff" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고처리</button>`
+            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고처리</button>`
           }
           <button class="btn btn-ghost btn-sm" onclick="kyOpenAction('${o.id}','pending')">↩ 대기로</button>
         `:o.status==='shipped'||o.status==='received'?`
@@ -6491,13 +6479,6 @@ async function kyConfirmAction(orderId, targetStatus){
   const note = (document.getElementById('kyActionNote').value||'').trim();
   const o = kyAllOrders.find(x=>x.id===orderId);
   if(!o){ toast('주문을 찾을 수 없습니다','error'); return; }
-  const confirmBtn = document.querySelector('#kyActionArea .btn-primary');
-  const originalBtnText = confirmBtn ? confirmBtn.textContent : '';
-  if(confirmBtn){
-    if(confirmBtn.disabled) return;
-    confirmBtn.disabled = true;
-    confirmBtn.textContent = '처리 중...';
-  }
   try{
     const now = new Date().toISOString();
     const updated = {...o, status:targetStatus, statusNote:note, statusUpdatedAt:now, processedBy: window._amtAdminName || '─'};
@@ -6535,13 +6516,7 @@ async function kyConfirmAction(orderId, targetStatus){
 
     toast('✅ '+o.dealerName+' → '+(lbl[targetStatus]||targetStatus),'success');
     kyCloseDetail();
-  }catch(e){
-    toast('❌ 처리 실패: '+e.message,'error');
-    if(confirmBtn){
-      confirmBtn.disabled = false;
-      confirmBtn.textContent = originalBtnText || '확인';
-    }
-  }
+  }catch(e){ toast('❌ 처리 실패: '+e.message,'error'); }
 }
 
 
