@@ -6691,17 +6691,26 @@ function calcKyDue(orderDate, term){
   // ★ nextBizDay 적용 — 모든 수금일이 토/일/공휴일이면 다음 영업일
   const d = parseDateLocal ? parseDateLocal(orderDate) : new Date(orderDate+'T00:00:00');
   const y = d.getFullYear(), m = d.getMonth();
-  const fmt = ds => (typeof fmtDateLocal==='function') ? fmtDateLocal(new Date(ds+'T00:00:00')) : ds;
+  // ★ toISOString() 대신 로컬 날짜 포매터 사용 (UTC 오프셋으로 하루 밀리는 버그 방지)
+  function localFmt(dt){
+    const yy = dt.getFullYear();
+    const mm = String(dt.getMonth()+1).padStart(2,'0');
+    const dd = String(dt.getDate()).padStart(2,'0');
+    return yy+'-'+mm+'-'+dd;
+  }
   const nbd = ds => (typeof nextBizDay==='function') ? nextBizDay(ds) : ds;
   if(term==='same') return nbd(orderDate);
   if(term==='same_next'){
     const n = new Date(d); n.setDate(n.getDate()+1);
-    return nbd(n.toISOString().slice(0,10));
+    return nbd(localFmt(n));
   }
-  if(term==='eom') return nbd(new Date(y,m+1,0).toISOString().slice(0,10));
-  if(term==='eom_next') return nbd(new Date(y,m+2,0).toISOString().slice(0,10));
-  if(term==='3m_19') return nbd(new Date(y,m+3,19).toISOString().slice(0,10));
-  return nbd(new Date(y,m+2,0).toISOString().slice(0,10));
+  if(term==='eom') return nbd(localFmt(new Date(y,m+1,0)));
+  if(term==='eom_next') return nbd(localFmt(new Date(y,m+2,0)));
+  if(term==='3m_19'){
+    const due = new Date(y, m+3, 19);
+    return nbd(localFmt(due));
+  }
+  return nbd(localFmt(new Date(y,m+2,0)));
 }
 
 function kyCloseDetail(){
@@ -6963,9 +6972,16 @@ const SUPER_ADMIN_CODE = '9350';
 let _otpPending = null; // { action, label, callback }
 
 function isSuperAdmin(){
-  // ★ 핵심: sessionStorage에 저장된 실제 코드와 비교
+  // ★ 총괄관리자 판단: 별도 플래그(amt_is_super)로 확인
+  // 로그인 시 코드=9350이면 플래그 설정, 이후 코드 변경해도 플래그 유지
+  if(sessionStorage.getItem('amt_is_super') === '1') return true;
+  // 하위 호환: 아직 플래그 없으면 코드로 확인 후 플래그 설정
   const storedCode = sessionStorage.getItem('amt_admin_code') || '';
-  return storedCode === SUPER_ADMIN_CODE;
+  if(storedCode === SUPER_ADMIN_CODE){
+    sessionStorage.setItem('amt_is_super', '1');
+    return true;
+  }
+  return false;
 }
 
 // OTP 요청: 총관리자가 아닌 경우 OTP 필요
@@ -7520,6 +7536,10 @@ async function doAmtLogin(){
 function setAmtAdminSession(name, code){
   sessionStorage.setItem(AMT_ADMIN_SESSION, name);
   sessionStorage.setItem('amt_admin_code', code || '');
+  // ★ 총괄관리자 플래그: 로그인 코드가 9350이면 설정 (코드 변경해도 유지됨)
+  if(String(code) === SUPER_ADMIN_CODE){
+    sessionStorage.setItem('amt_is_super', '1');
+  }
   // ★ 자동 로그인: localStorage에 코드 저장 (다음 접속 시 자동 입력)
   if(code) {
     localStorage.setItem('amt_saved_code', code);
@@ -7535,6 +7555,7 @@ function amtAdminLogout(){
   if(!confirm(window._amtAdminName + '님 로그아웃 하시겠습니까?')) return;
   sessionStorage.removeItem(AMT_ADMIN_SESSION);
   sessionStorage.removeItem('amt_admin_code');
+  sessionStorage.removeItem('amt_is_super'); // ★ 총괄관리자 플래그 초기화
   window._amtAdminName = null;
   document.getElementById('amtLoginScreen').style.display = 'flex';
   // ★ 로그아웃 후에도 코드 자동 입력 유지
