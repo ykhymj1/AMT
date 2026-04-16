@@ -1,5 +1,5 @@
-// AMT 알림 Service Worker v20260415-r3
-const CACHE = 'amt-v20260415-r3';
+// AMT 알림 Service Worker v20260416-r1
+const CACHE = 'amt-v20260416-r1';
 const APP_ROOT = '';  // Netlify 루트 배포
 const ASSETS = [
   APP_ROOT + '/',
