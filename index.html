@@ -2014,20 +2014,10 @@ function prevBizDay(ds){
   return cur;
 }
 
-// ★ 날짜가 토/일/공휴일이면 다음 영업일로 이동
-function nextBizDay(ds){
-  let cur = ds;
-  while(isNonBizDay(cur)){
-    cur = addDays(cur, 1);
-  }
-  return cur;
-}
-
 // eom: 말일 계산 후 토요일/공휴일 조정
 function eomBiz(y, m){
   const lastDay = eom(y, m);
-  // ★ 말일이 토/일/공휴일이면 다음 영업일 (요구사항: 휴일 다음날)
-  return nextBizDay(lastDay);
+  return prevBizDay(lastDay);
 }
 
 function calcDue(orderDate, term, dealerId){
@@ -2036,11 +2026,11 @@ function calcDue(orderDate, term, dealerId){
   if(dealerId==='chungu'||term==='3m_19'){
     const due=parseDateLocal(orderDate);
     due.setMonth(due.getMonth()+3); due.setDate(19);
-    return nextBizDay(fmtDateLocal(due));
+    return fmtDateLocal(due);
   }
   switch(term){
-    case 'same':      return nextBizDay(orderDate);
-    case 'same_next': { const nx = addDays(orderDate,1); return nextBizDay(nx); }
+    case 'same':      return orderDate;
+    case 'same_next': return orderDate; // 보수적: 당일
     case 'eom':       return eomBiz(y, m);           // 말일 → 토/공휴일이면 전날
     case 'eom_next':  return m===12 ? eomBiz(y+1,1) : eomBiz(y, m+1); // 다음달 말일 동일 적용
     default:          return orderDate;
@@ -4906,9 +4896,7 @@ function migrateDueDates(){
     const d = dealers.find(x => x.id === o.dealerId);
     if(!d) return;
     const term = d.term || o.term;
-    // ★ 3m_19(청구성심 포함) + eom/eom_next 모두 처리
-    if(!term || !['eom','eom_next','3m_19'].includes(term)) return;
-    if(!o.orderDate) return;
+    if(!term || !['eom','eom_next'].includes(term)) return;
     // originalDueDate: 수금조건 기준 원래 예정일 (재계산 대상)
     const recalc = calcDue(o.orderDate, term, o.dealerId);
     // originalDueDate가 있으면 그것을 보정, 없으면 dueDate 보정
@@ -5945,32 +5933,6 @@ function kySetSync(on, label){
   if(label) lb.textContent = label;
 }
 
-/* ═══ KY 신규주문 알림 소리 ═══ */
-function playKyOrderSound(){
-  try{
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    // 3단 알림음: 높은음 → 더높은음 → 최고음
-    const notes = [
-      {freq:880, start:0,    dur:0.12},
-      {freq:1100,start:0.14, dur:0.12},
-      {freq:1320,start:0.28, dur:0.22}
-    ];
-    notes.forEach(({freq,start,dur}) => {
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      osc.connect(gain);
-      gain.connect(ctx.destination);
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, ctx.currentTime + start);
-      gain.gain.linearRampToValueAtTime(0.45, ctx.currentTime + start + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + start + dur);
-      osc.start(ctx.currentTime + start);
-      osc.stop(ctx.currentTime + start + dur + 0.05);
-    });
-  } catch(e){ console.warn('알림음 재생 실패:', e); }
-}
-
 /* ═══ KY 신규주문 팝업 창 ═══ */
 function showKyNewOrderPopup(order){
   const old = document.getElementById('kyNewOrderPopup');
@@ -6018,7 +5980,6 @@ function showKyNewOrderPopup(order){
     </div>
   `;
   document.body.appendChild(popup);
-  playKyOrderSound();
 }
 
 function kyStartListener(){
@@ -6690,29 +6651,14 @@ async function kyAutoUpdateOnReturn(order, note, now){
 
 
 function calcKyDue(orderDate, term){
-  // ★ nextBizDay 적용 — 모든 수금일이 토/일/공휴일이면 다음 영업일
-  const d = parseDateLocal ? parseDateLocal(orderDate) : new Date(orderDate+'T00:00:00');
+  const d = new Date(orderDate);
   const y = d.getFullYear(), m = d.getMonth();
-  // ★ toISOString() 대신 로컬 날짜 포매터 사용 (UTC 오프셋으로 하루 밀리는 버그 방지)
-  function localFmt(dt){
-    const yy = dt.getFullYear();
-    const mm = String(dt.getMonth()+1).padStart(2,'0');
-    const dd = String(dt.getDate()).padStart(2,'0');
-    return yy+'-'+mm+'-'+dd;
-  }
-  const nbd = ds => (typeof nextBizDay==='function') ? nextBizDay(ds) : ds;
-  if(term==='same') return nbd(orderDate);
-  if(term==='same_next'){
-    const n = new Date(d); n.setDate(n.getDate()+1);
-    return nbd(localFmt(n));
-  }
-  if(term==='eom') return nbd(localFmt(new Date(y,m+1,0)));
-  if(term==='eom_next') return nbd(localFmt(new Date(y,m+2,0)));
-  if(term==='3m_19'){
-    const due = new Date(y, m+3, 19);
-    return nbd(localFmt(due));
-  }
-  return nbd(localFmt(new Date(y,m+2,0)));
+  if(term==='same') return orderDate;
+  if(term==='same_next'){ const n=new Date(d); n.setDate(n.getDate()+1); return n.toISOString().slice(0,10); }
+  if(term==='eom') return new Date(y,m+1,0).toISOString().slice(0,10);
+  if(term==='eom_next') return new Date(y,m+2,0).toISOString().slice(0,10);
+  if(term==='3m_19') return new Date(y,m+3,19).toISOString().slice(0,10);
+  return new Date(y,m+2,0).toISOString().slice(0,10);
 }
 
 function kyCloseDetail(){
@@ -6790,11 +6736,6 @@ async function saveOneAdminCode(name){
   const newCode = (document.getElementById('acode_'+name).value||'').trim();
   if(!newCode){ alert('코드를 입력하세요'); return; }
   await fb.set(fb.ref(fb.db,'amt_pw/'+name), newCode);
-  // ★ 현재 로그인한 사람의 코드가 변경된 경우 세션도 업데이트 (총괄관리자 권한 유지)
-  if(window._amtAdminName && window._amtAdminName === name){
-    sessionStorage.setItem('amt_admin_code', newCode);
-    localStorage.setItem('amt_saved_code', newCode);
-  }
   toast('✅ '+name+' 코드 저장됨','success');
 }
 
@@ -6974,16 +6915,9 @@ const SUPER_ADMIN_CODE = '9350';
 let _otpPending = null; // { action, label, callback }
 
 function isSuperAdmin(){
-  // ★ 총괄관리자 판단: 별도 플래그(amt_is_super)로 확인
-  // 로그인 시 코드=9350이면 플래그 설정, 이후 코드 변경해도 플래그 유지
-  if(sessionStorage.getItem('amt_is_super') === '1') return true;
-  // 하위 호환: 아직 플래그 없으면 코드로 확인 후 플래그 설정
+  // ★ 핵심: sessionStorage에 저장된 실제 코드와 비교
   const storedCode = sessionStorage.getItem('amt_admin_code') || '';
-  if(storedCode === SUPER_ADMIN_CODE){
-    sessionStorage.setItem('amt_is_super', '1');
-    return true;
-  }
-  return false;
+  return storedCode === SUPER_ADMIN_CODE;
 }
 
 // OTP 요청: 총관리자가 아닌 경우 OTP 필요
@@ -7041,14 +6975,11 @@ async function requireOtp(actionLabel, callback){
       https://api.telegram.org/bot{토큰}/getUpdates 접속 → chat.id 확인
    3. 아래 TELEGRAM_BOT_TOKEN, SUPER_ADMIN_CHAT_ID 에 입력
 ═══════════════════════════════════════════════════════ */
-const TELEGRAM_BOT_TOKEN  = '8615303756:AAEWCz82f6LBzgBx769v1xbUkJ6SOM7rpjk';  // 총관리자 봇
-const SUPER_ADMIN_CHAT_ID = '1988388217';  // 총관리자 채팅 ID (유경호)
-
-// ★ 일반관리자 텔레그램 (주문신청 + 코드문의 알림만 수신)
-const ADMIN2_BOT_TOKEN  = '8571539059:AAG1BU5DH2h9Q0qoJk-46a2p3FfYkdEYnvI'; // 김진아 봇
-const ADMIN2_CHAT_ID    = '8505927461';   // 김진아
-const ADMIN3_BOT_TOKEN  = '8371712654:AAFFSRwDWBokRdcj8TVIWW4kC45J3bcoXvI'; // 강승섭 봇
-const ADMIN3_CHAT_ID    = '1740618685';   // 강승섭
+const TELEGRAM_BOT_TOKEN  = '8615303756:AAEWCz82f6LBzgBx769v1xbUkJ6SOM7rpjk';  // KY 주문 봇
+const SUPER_ADMIN_CHAT_ID = '1988388217';  // 총관리자 채팅 ID
+// 나중에 추가할 관리자 채팅 ID (현재 미사용)
+// const ADMIN2_CHAT_ID = '';
+// const ADMIN3_CHAT_ID = '';
 
 /* 텔레그램 메시지 전송 공통 함수 */
 async function sendTelegram(chatId, text){
@@ -7067,25 +6998,6 @@ async function sendTelegram(chatId, text){
     else console.log('[텔레그램] 발송 완료 → chat_id:', chatId);
   } catch(e){
     console.warn('[텔레그램] 오류:', e.message);
-  }
-}
-
-/* ★ 일반관리자에게 주문/코드문의 알림 전송 */
-async function sendTelegramToAdmins(text){
-  // 각 관리자의 봇이 별도이므로 각 봇으로 각각 전송
-  const admins = [
-    { token: ADMIN2_BOT_TOKEN, chatId: ADMIN2_CHAT_ID, name: '김진아' },
-    { token: ADMIN3_BOT_TOKEN, chatId: ADMIN3_CHAT_ID, name: '강승섭' },
-  ];
-  for(const admin of admins){
-    if(!admin.token || !admin.chatId) continue;
-    try{
-      await fetch('https://api.telegram.org/bot' + admin.token + '/sendMessage', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: admin.chatId, text: text, parse_mode: 'HTML' })
-      });
-    }catch(e){ console.warn('[텔레그램-' + admin.name + '] 실패:', e.message); }
   }
 }
 
@@ -7226,72 +7138,37 @@ function startSuperAdminNotifListener(){
     const notifs = snap.val();
     const unread = Object.values(notifs).filter(n => !n.read);
 
-    // ★ 팝업은 타입별로 가장 최근 알림 1개만 표시
-    const sortByTime = (a, b) => (b.at||'').localeCompare(a.at||'');
-
-    // code_request: 가장 최근 1개만
-    const codeReqs = unread.filter(n => n.type === 'code_request').sort(sortByTime);
-    if(codeReqs.length > 0){
-      const n = codeReqs[0];
+    unread.forEach(n => {
       const key = 'shown_' + (n.id || n.at || n.message || '');
-      if(!sessionStorage.getItem(key)){
-        sessionStorage.setItem(key, '1');
+      if(sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, '1');
+
+      if(n.type === 'otp_request'){
+        if(isSuperAdmin()) showSuperAdminNotif(n);
+      } else if(n.type === 'code_request'){
         showCodeRequestPopup(n);
         if(Notification && Notification.permission === 'granted'){
           new Notification('🔑 대리점 코드 요청', {
             body: (n.message||'').replace('[코드요청] ','') || '새 코드 요청이 도착했습니다.',
             icon: '/AMT/icon-192.png',
-            tag: 'code-request-latest',
+            tag: 'code-request-' + (n.at||''),
             requireInteraction: true
           });
         }
-      }
-    }
-
-    // otp_request: 가장 최근 1개만 (총관리자)
-    if(isSuperAdmin()){
-      const otpReqs = unread.filter(n => n.type === 'otp_request').sort(sortByTime);
-      if(otpReqs.length > 0){
-        const n = otpReqs[0];
-        const key = 'shown_' + (n.id || n.at || n.message || '');
-        if(!sessionStorage.getItem(key)){
-          sessionStorage.setItem(key, '1');
-          showSuperAdminNotif(n);
-        }
-      }
-    }
-
-    // ky_order: 가장 최근 1개만
-    const kyOrders = unread.filter(n => n.type === 'ky_order').sort(sortByTime);
-    if(kyOrders.length > 0){
-      const n = kyOrders[0];
-      const key = 'shown_' + (n.id || n.at || n.message || '');
-      if(!sessionStorage.getItem(key)){
-        sessionStorage.setItem(key, '1');
+      } else if(n.type === 'ky_order'){
         showKyOrderNotif(n);
         if(Notification && Notification.permission === 'granted'){
           new Notification('📦 KY 주문 상태 변경', {
             body: n.message || '',
             icon: '/AMT/icon-192.png',
-            tag: 'ky-order-latest',
+            tag: 'ky-order-' + (n.orderId||''),
             requireInteraction: false
           });
         }
+      } else {
+        if(isSuperAdmin()) showSuperAdminNotif(n);
       }
-    }
-
-    // 기타 알림 (총관리자): 가장 최근 1개만
-    if(isSuperAdmin()){
-      const others = unread.filter(n => !['otp_request','code_request','ky_order'].includes(n.type)).sort(sortByTime);
-      if(others.length > 0){
-        const n = others[0];
-        const key = 'shown_' + (n.id || n.at || n.message || '');
-        if(!sessionStorage.getItem(key)){
-          sessionStorage.setItem(key, '1');
-          showSuperAdminNotif(n);
-        }
-      }
-    }
+    });
 
     if(isSuperAdmin()){
       const otpUnread = unread.filter(n => n.type === 'otp_request');
@@ -7327,7 +7204,6 @@ function showKyOrderNotif(n){
       style="width:100%;padding:6px;border-radius:6px;border:none;background:rgba(255,255,255,.15);color:#fff;cursor:pointer;font-size:.78rem">닫기</button>
   `;
   document.body.appendChild(popup);
-  playKyOrderSound();
   setTimeout(() => { const el = document.getElementById('kyOrderNotifPopup'); if(el) el.remove(); }, 15000);
 }
 
@@ -7437,67 +7313,13 @@ function updateSuperAdminBadge(count){
   if(!badge){
     const badgeEl = document.createElement('span');
     badgeEl.id = 'superAdminNotifBadge';
-    badgeEl.style.cssText = 'background:#ef4444;color:#fff;padding:2px 6px;border-radius:10px;font-size:.65rem;font-weight:700;margin-left:4px;cursor:pointer';
-    badgeEl.title = '알림 목록 보기';
-    badgeEl.onclick = function(e){ e.stopPropagation(); showNotifList(); };
+    badgeEl.style.cssText = 'background:#ef4444;color:#fff;padding:2px 6px;border-radius:10px;font-size:.65rem;font-weight:700;margin-left:4px';
     const adminBadge = document.getElementById('amtAdminBadge');
     if(adminBadge) adminBadge.appendChild(badgeEl);
     badge = badgeEl;
   }
   badge.textContent = count > 0 ? count : '';
   badge.style.display = count > 0 ? 'inline' : 'none';
-}
-
-// ★ 알림 목록 패널 표시
-function showNotifList(){
-  const existing = document.getElementById('notifListPanel');
-  if(existing){ existing.remove(); return; }
-
-  const fb = window._fb;
-  if(!fb||!fb.ready){ toast('Firebase 미연결','error'); return; }
-
-  const panel = document.createElement('div');
-  panel.id = 'notifListPanel';
-  panel.style.cssText = 'position:fixed;top:60px;right:12px;z-index:10010;width:min(92vw,360px);max-height:70vh;overflow-y:auto;background:#fff;border:2px solid #2563eb;border-radius:16px;box-shadow:0 12px 40px rgba(37,99,235,.25);font-size:.82rem';
-
-  panel.innerHTML = '<div style="padding:12px 16px;background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;border-radius:14px 14px 0 0;display:flex;justify-content:space-between;align-items:center"><b>🔔 알림 목록</b><button onclick="document.getElementById(\x27notifListPanel\x27).remove()" style="background:none;border:none;color:#fff;font-size:1.1rem;cursor:pointer">✕</button></div><div id="notifListBody" style="padding:10px 12px">불러오는 중...</div>';
-  document.body.appendChild(panel);
-
-  fb.get(fb.ref(fb.db,'amt_notifications')).then(snap => {
-    const body = document.getElementById('notifListBody');
-    if(!body) return;
-    if(!snap.exists()){ body.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:16px">알림 없음</div>'; return; }
-    const notifs = Object.entries(snap.val())
-      .map(([id, n]) => ({...n, _key: id}))
-      .filter(n => !n.read)
-      .sort((a,b) => (b.at||'').localeCompare(a.at||''));
-    if(!notifs.length){ body.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:16px">읽지 않은 알림 없음</div>'; return; }
-    body.innerHTML = notifs.map(n => {
-      const at = n.at ? new Date(n.at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
-      const typeLabel = {otp_request:'🔐 OTP', code_request:'🔑 코드요청', ky_order:'📦 KY주문'}[n.type] || '🔔 알림';
-      const msg = (n.message||'').replace('[코드요청] ','').replace('[OTP요청] ','');
-      return `<div style="border:1px solid #e0e7ff;border-radius:10px;padding:10px 12px;margin-bottom:8px;background:#f8faff">
-        <div style="display:flex;justify-content:space-between;margin-bottom:4px">
-          <span style="font-weight:700;color:#2563eb">${typeLabel}</span>
-          <span style="color:#9ca3af;font-size:.72rem">${at}</span>
-        </div>
-        <div style="color:#1e3a8a;font-weight:600">${msg}</div>
-        <button onclick="markNotifRead('${n._key}')" style="margin-top:6px;font-size:.7rem;padding:3px 8px;border:1px solid #bfdbfe;border-radius:6px;background:#eff6ff;color:#1d4ed8;cursor:pointer">읽음 처리</button>
-      </div>`;
-    }).join('');
-  }).catch(() => {
-    const body = document.getElementById('notifListBody');
-    if(body) body.innerHTML = '<div style="color:#ef4444;text-align:center;padding:16px">알림 로드 실패</div>';
-  });
-}
-
-async function markNotifRead(key){
-  const fb = window._fb;
-  if(!fb||!fb.ready) return;
-  await fb.set(fb.ref(fb.db,'amt_notifications/'+key+'/read'), true);
-  const existing = document.getElementById('notifListPanel');
-  if(existing) existing.remove();
-  showNotifList();
 }
 
 
@@ -7538,10 +7360,6 @@ async function doAmtLogin(){
 function setAmtAdminSession(name, code){
   sessionStorage.setItem(AMT_ADMIN_SESSION, name);
   sessionStorage.setItem('amt_admin_code', code || '');
-  // ★ 총괄관리자 플래그: 로그인 코드가 9350이면 설정 (코드 변경해도 유지됨)
-  if(String(code) === SUPER_ADMIN_CODE){
-    sessionStorage.setItem('amt_is_super', '1');
-  }
   // ★ 자동 로그인: localStorage에 코드 저장 (다음 접속 시 자동 입력)
   if(code) {
     localStorage.setItem('amt_saved_code', code);
@@ -7557,7 +7375,6 @@ function amtAdminLogout(){
   if(!confirm(window._amtAdminName + '님 로그아웃 하시겠습니까?')) return;
   sessionStorage.removeItem(AMT_ADMIN_SESSION);
   sessionStorage.removeItem('amt_admin_code');
-  sessionStorage.removeItem('amt_is_super'); // ★ 총괄관리자 플래그 초기화
   window._amtAdminName = null;
   document.getElementById('amtLoginScreen').style.display = 'flex';
   // ★ 로그아웃 후에도 코드 자동 입력 유지
@@ -7588,13 +7405,11 @@ window.addEventListener('DOMContentLoaded',()=>{
 });
 
 // PWA Service Worker 등록 (github.io 배포 환경에서만)
-// GitHub Pages + Netlify 모두 지원
-if('serviceWorker' in navigator){
+if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
   window.addEventListener('load',()=>{
-    const swPath = location.hostname.endsWith('github.io') ? '/AMT/sw.js' : '/sw.js';
-    navigator.serviceWorker.register(swPath + '?v=20260414-netlify1')
-      .then(r=>console.log('[AMT SW] 등록:', r.scope))
-      .catch(e=>console.log('[AMT SW] 스킵:', e.message));
+    navigator.serviceWorker.register('/AMT/sw.js?v=20260413-hotfix3')
+      .then(r=>console.log('[AMT SW] 등록 완료:', r.scope))
+      .catch(e=>console.log('[AMT SW] 등록 스킵:', e.message));
   });
 }
 </script>
