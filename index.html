@@ -2168,7 +2168,45 @@ function init(){
   refreshAll();
 }
 
+/* ── refreshAll : 디바운싱 + 현재 탭 즉시 / 나머지 탭 지연 렌더링 ── */
+let _refreshTimer = null;
+let _refreshPending = false;
+
 function refreshAll(){
+  // 현재 활성 탭만 즉시 렌더링 (메인 스레드 블로킹 방지)
+  _renderActivePage();
+  // 나머지 탭은 디바운싱해서 한 번만 렌더링
+  if(_refreshPending) return;
+  _refreshPending = true;
+  clearTimeout(_refreshTimer);
+  _refreshTimer = setTimeout(() => {
+    _refreshPending = false;
+    _renderAllPages();
+  }, 300);
+}
+
+function _getActivePage(){
+  const activeBtn = document.querySelector('.nav-btn.active[data-page]');
+  return activeBtn ? activeBtn.dataset.page : 'dashboard';
+}
+
+function _renderActivePage(){
+  populateSelects();
+  const page = _getActivePage();
+  switch(page){
+    case 'dashboard':  renderDash(); break;
+    case 'order':      renderOrders(); break;
+    case 'internal':   renderInternalList(); break;
+    case 'receivable': renderRecCalendar(); renderRecList(); break;
+    case 'inventory':  renderInvCards(); renderInvHistory(); break;
+    case 'dealers':    renderDealerCards(); break;
+    case 'report':     renderReport(); renderDebtSummary(); renderBestReturnList(); break;
+    case 'ky-orders':  kyApplyFilter(); kyUpdateKpi(kyAllOrders); break;
+    default:           renderDash(); break;
+  }
+}
+
+function _renderAllPages(){
   populateSelects();
   renderDash();
   renderOrders();
@@ -4906,16 +4944,19 @@ function migrateDueDates(){
     const d = dealers.find(x => x.id === o.dealerId);
     if(!d) return;
     const term = d.term || o.term;
-    // ★ 3m_19(청구성심 포함) + eom/eom_next 모두 처리
-    if(!term || !['eom','eom_next','3m_19'].includes(term)) return;
-    if(!o.orderDate) return;
-    // originalDueDate: 수금조건 기준 원래 예정일 (재계산 대상)
-    const recalc = calcDue(o.orderDate, term, o.dealerId);
-    // originalDueDate가 있으면 그것을 보정, 없으면 dueDate 보정
-    if(o.originalDueDate && o.originalDueDate !== recalc){
+    const needsTermRecalc = !!(term && ['eom','eom_next','3m_19'].includes(term));
+    const dueNeedsBizFix = !!(o.dueDate && isNonBizDay(o.dueDate));
+    const origNeedsBizFix = !!(o.originalDueDate && isNonBizDay(o.originalDueDate));
+    if(!needsTermRecalc && !dueNeedsBizFix && !origNeedsBizFix) return;
+
+    const recalc = needsTermRecalc ? calcDue(o.orderDate, term, o.dealerId) : (o.originalDueDate || o.dueDate || '');
+    if(!recalc) return;
+
+    if(o.originalDueDate && (o.originalDueDate !== recalc || origNeedsBizFix)){
       o.originalDueDate = recalc;
       changed++;
-    } else if(!o.originalDueDate && o.status !== 'done' && o.dueDate !== recalc){
+    }
+    if(o.status !== 'done' && (!o.originalDueDate || dueNeedsBizFix || o.dueDate !== recalc)){
       o.dueDate = recalc;
       changed++;
     }
@@ -4924,16 +4965,30 @@ function migrateDueDates(){
     console.log(`[dueDate 재계산] ${changed}건 수금예정일 업데이트 (토/일/공휴일 조정)`);
     saveLS();
   }
+  return changed;
 }
+
+let _fbSaving = false;
+let _fbSaveQueued = false;
 
 async function fbSaveAll(){
   const fb=window._fb; if(!fb||!fb.ready) return;
+  // 이미 저장 중이면 완료 후 한 번 더 실행 예약
+  if(_fbSaving){ _fbSaveQueued = true; return; }
+  _fbSaving = true;
   const now=new Date().toISOString();
   const payload={ orders, invLogs, dealers, products, internalTrades, auditLogs, txLogs, bestReturns, kyReturns, importPrices:(typeof importPrices!=='undefined'?importPrices:{}), _updatedAt:now };
   try{
     await fb.set(fb.ref(fb.db,'amt_data'), payload);
     setLastSync(now);
   }catch(e){ console.warn('FB save err',e); }
+  finally{
+    _fbSaving = false;
+    if(_fbSaveQueued){
+      _fbSaveQueued = false;
+      setTimeout(()=>fbSaveAll(), 100);
+    }
+  }
 }
 
 // 개별 호출 래퍼 (기존 코드 호환 유지 - 실제로는 전체 저장)
@@ -5009,6 +5064,10 @@ function _applyRemote(remote){
   localStorage.setItem('amt_updatedAt', now);
   saveLS();
   setLastSync(now);
+  const dueChanged = migrateDueDates();
+  if(dueChanged > 0){
+    Promise.resolve().then(()=>fbSaveAll()).catch(err=>console.warn('dueDate remote 보정 업로드 실패', err));
+  }
 }
 
 // 실시간 리스너 등록 (다른 기기 변경사항 자동 수신)
@@ -5025,7 +5084,7 @@ function fbStartListener(){
     if(remoteTime > localTime){
       // 다른 기기에서 변경됨
       _applyRemote(remote);
-      refreshAll();
+      _renderActivePage();
       toast('📱 다른 기기에서 데이터가 업데이트되었습니다','info');
     }
   });
@@ -5365,9 +5424,19 @@ function nav(btn){
   const page=btn.dataset.page;
   document.getElementById('page-'+page).classList.add('active');
   btn.classList.add('active');
-  refreshAll();
-  // 설정 탭 진입 시 수입가격 섹션 표시 여부 결정
-  if(page==='settings') renderImportPriceSection();
+  // 탭 전환 시 해당 탭만 즉시 렌더링 (전체 렌더 불필요)
+  populateSelects();
+  switch(page){
+    case 'dashboard':  renderDash(); break;
+    case 'order':      renderOrders(); break;
+    case 'internal':   renderInternalList(); break;
+    case 'receivable': renderRecCalendar(); renderRecList(); break;
+    case 'inventory':  renderInvCards(); renderInvHistory(); break;
+    case 'dealers':    renderDealerCards(); break;
+    case 'report':     renderReport(); renderDebtSummary(); renderBestReturnList(); break;
+    case 'ky-orders':  kyApplyFilter(); kyUpdateKpi(kyAllOrders); break;
+    case 'settings':   renderImportPriceSection(); break;
+  }
 }
 
 function recTab(name,btn){
@@ -6068,10 +6137,17 @@ function kyStartListener(){
   }
   if(!window.__amtKyAutoRefreshBound){
     window.__amtKyAutoRefreshBound = true;
-    window.addEventListener('focus', () => queueKyReload('focus', 0));
-    window.addEventListener('pageshow', () => queueKyReload('pageshow', 0));
+    let _lastKyAutoRefresh = 0;
+    function _throttledKyReload(src){
+      const now = Date.now();
+      if(now - _lastKyAutoRefresh < 10000) return; // 10초 쿨다운
+      _lastKyAutoRefresh = now;
+      queueKyReload(src, 0);
+    }
+    window.addEventListener('focus', () => _throttledKyReload('focus'));
+    window.addEventListener('pageshow', () => _throttledKyReload('pageshow'));
     document.addEventListener('visibilitychange', () => {
-      if(document.visibilityState === 'visible') queueKyReload('visible', 0);
+      if(document.visibilityState === 'visible') _throttledKyReload('visible');
     });
   }
   if(Notification && Notification.permission==='default') Notification.requestPermission();
@@ -6249,7 +6325,8 @@ async function syncKyOrderLine(relKyOrderId, product, options={}){
   const linkedAmtOrderId = options.relAmtOrder || kyOrder.relAmtOrder || null;
   const canFallbackSingleLine = !!(linkedAmtOrderId && (kyOrder.fromAmt || kyOrder.relAmtOrder===linkedAmtOrderId) && oldItems.length===1);
   const match = item => {
-    const sameProduct = normalizeKyProductKey(item.product) === productKey;
+    const itemKeys = [item.product, item.relKyProduct].map(v=>normalizeKyProductKey(v)).filter(Boolean);
+    const sameProduct = itemKeys.includes(productKey);
     const sameLinkedOrder = !!(linkedAmtOrderId && (item.relAmtOrder===linkedAmtOrderId || kyOrder.relAmtOrder===linkedAmtOrderId));
     return sameProduct || sameLinkedOrder;
   };
@@ -6258,6 +6335,9 @@ async function syncKyOrderLine(relKyOrderId, product, options={}){
 
   if(options.deleteLine){
     nextItems = oldItems.filter(item => !match(item));
+    if(nextItems.length === oldItems.length && canFallbackSingleLine && oldItems.length === 1){
+      nextItems = [];
+    }
   } else {
     let touched = false;
     nextItems = oldItems.map(item => {
@@ -6381,12 +6461,12 @@ function kyRenderOrders(list){
           <button class="btn btn-success" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','accepted')">✅ 접수</button>
           ${o.orderType==='return'?
             `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem;color:#16a34a;border-color:#16a34a" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
-            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고</button>`
+            `<button class="btn btn-primary" style="padding:8px 18px;font-size:.88rem;font-weight:800;background:#2563eb;border-color:#2563eb;color:#fff" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고</button>`
           }
         `:o.status==='accepted'?`
           ${o.orderType==='return'?
             `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem;color:#16a34a;border-color:#16a34a" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
-            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고처리</button>`
+            `<button class="btn btn-primary" style="padding:8px 18px;font-size:.88rem;font-weight:800;background:#2563eb;border-color:#2563eb;color:#fff" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고처리</button>`
           }
           <button class="btn btn-ghost btn-sm" onclick="kyOpenAction('${o.id}','pending')">↩ 대기로</button>
         `:o.status==='shipped'||o.status==='received'?`
@@ -6479,6 +6559,13 @@ async function kyConfirmAction(orderId, targetStatus){
   const note = (document.getElementById('kyActionNote').value||'').trim();
   const o = kyAllOrders.find(x=>x.id===orderId);
   if(!o){ toast('주문을 찾을 수 없습니다','error'); return; }
+  const confirmBtn = document.querySelector('#kyActionArea .btn-primary');
+  const originalBtnText = confirmBtn ? confirmBtn.textContent : '';
+  if(confirmBtn){
+    if(confirmBtn.disabled) return;
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '처리 중...';
+  }
   try{
     const now = new Date().toISOString();
     const updated = {...o, status:targetStatus, statusNote:note, statusUpdatedAt:now, processedBy: window._amtAdminName || '─'};
@@ -6516,7 +6603,13 @@ async function kyConfirmAction(orderId, targetStatus){
 
     toast('✅ '+o.dealerName+' → '+(lbl[targetStatus]||targetStatus),'success');
     kyCloseDetail();
-  }catch(e){ toast('❌ 처리 실패: '+e.message,'error'); }
+  }catch(e){
+    toast('❌ 처리 실패: '+e.message,'error');
+    if(confirmBtn){
+      confirmBtn.disabled = false;
+      confirmBtn.textContent = originalBtnText || '확인';
+    }
+  }
 }
 
 
@@ -6526,13 +6619,11 @@ async function kyAutoUpdateOnShipped(order, note, now){
   const fb = window._fb;
   if(!fb||!fb.ready) return;
   try{
-    const snap = await fb.get(fb.ref(fb.db,'amt_data'));
-    if(!snap.exists()) return;
-    const data = snap.val();
-    const remoteInvLogs = data.invLogs || [];
-    const remoteOrders = data.orders || [];
-    const dealers = data.dealers || [];
-    const dealer = dealers.find(d => d.id === order.dealerId || d.name === order.dealerName);
+    // ★ Firebase GET 제거 → 메모리 데이터 직접 사용 (성능 개선)
+    const remoteInvLogs = [...(invLogs || [])];
+    const remoteOrders  = [...(orders  || [])];
+    const dealerList    = dealers || [];
+    const dealer = dealerList.find(d => d.id === order.dealerId || d.name === order.dealerName);
 
     for(const item of (order.items||[])){
       const lineId = 'ord_ky_' + order.id + '_' + item.product.replace(/\s/g,'_');
@@ -6612,13 +6703,11 @@ async function kyAutoUpdateOnReturn(order, note, now){
   const fb = window._fb;
   if(!fb||!fb.ready) return;
   try{
-    const snap = await fb.get(fb.ref(fb.db,'amt_data'));
-    if(!snap.exists()) return;
-    const data = snap.val();
-    const remoteInvLogs = data.invLogs || [];
-    const remoteOrders = data.orders || [];
-    const dealers = data.dealers || [];
-    const dealer = dealers.find(d => d.id === order.dealerId || d.name === order.dealerName);
+    // ★ Firebase GET 제거 → 메모리 데이터 직접 사용 (성능 개선)
+    const remoteInvLogs = [...(invLogs || [])];
+    const remoteOrders  = [...(orders  || [])];
+    const dealerList    = dealers || [];
+    const dealer = dealerList.find(d => d.id === order.dealerId || d.name === order.dealerName);
 
     for(const item of (order.items||[])){
       const lineId = 'ord_ky_ret_' + order.id + '_' + item.product.replace(/\s/g,'_');
@@ -6730,11 +6819,17 @@ function handleResize(){
   // handled by CSS
 }
 window.addEventListener('resize',handleResize);
-// 화면 복귀(탭 전환, 폰 화면 켜기) 시 자동 동기화
+// 화면 복귀 시 자동 동기화 — fbSync는 최초 1회만, 이후는 fbStartListener의 onValue가 처리
+let _lastVisibleSync = 0;
 document.addEventListener('visibilitychange',()=>{
   if(document.visibilityState==='visible'){
     const fb=window._fb;
-    if(fb&&fb.ready) fbSync();
+    const now = Date.now();
+    // 30초 이내 중복 동기화 방지
+    if(fb&&fb.ready && (now - _lastVisibleSync) > 30000){
+      _lastVisibleSync = now;
+      fbSync();
+    }
   }
 });
 
