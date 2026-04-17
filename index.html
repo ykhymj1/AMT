@@ -5933,10 +5933,35 @@ function kySetSync(on, label){
   if(label) lb.textContent = label;
 }
 
+/* ═══ KY 신규주문 알림 소리 ═══ */
+function playKyOrderSound(){
+  try{
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const play = (freq, start, dur) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.frequency.value = freq;
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0, ctx.currentTime + start);
+      gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + start + 0.01);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + start + dur);
+      osc.start(ctx.currentTime + start);
+      osc.stop(ctx.currentTime + start + dur + 0.05);
+    };
+    play(880, 0,    0.12);
+    play(1100, 0.15, 0.12);
+    play(1320, 0.30, 0.20);
+  }catch(e){ console.warn('알림음 재생 실패', e); }
+}
+
 /* ═══ KY 신규주문 팝업 창 ═══ */
 function showKyNewOrderPopup(order){
   const old = document.getElementById('kyNewOrderPopup');
   if(old) old.remove();
+
+  // ★ 알림 소리 재생
+  playKyOrderSound();
 
   const popup = document.createElement('div');
   popup.id = 'kyNewOrderPopup';
@@ -6650,15 +6675,64 @@ async function kyAutoUpdateOnReturn(order, note, now){
 }
 
 
+// ★ KY 공휴일 (AMT 내 KY 수금일 계산용)
+const KY_KR_HOLIDAYS_AMT = new Set([
+  '2025-01-01','2025-01-28','2025-01-29','2025-01-30',
+  '2025-03-01','2025-05-05','2025-05-06','2025-06-06',
+  '2025-08-15','2025-10-03','2025-10-06','2025-10-07','2025-10-08','2025-12-25',
+  '2026-01-01','2026-01-28','2026-01-29','2026-01-30',
+  '2026-03-01','2026-03-02','2026-05-05','2026-06-06','2026-08-17',
+  '2026-09-24','2026-09-25','2026-09-26','2026-10-03','2026-10-05',
+  '2026-10-09','2026-12-25',
+  '2027-01-01','2027-02-17','2027-02-18','2027-02-19',
+  '2027-03-01','2027-05-05','2027-05-24','2027-05-25',
+  '2027-06-06','2027-06-07','2027-08-15','2027-08-16',
+  '2027-10-03','2027-10-09','2027-10-11','2027-10-14','2027-10-15',
+  '2027-12-25','2027-12-27',
+]);
+function kyIsNonBizDayAMT(ds){
+  const parts = ds.split('-').map(Number);
+  const d = new Date(parts[0], parts[1]-1, parts[2]);
+  const dow = d.getDay();
+  if(dow === 0 || dow === 6) return true;
+  if(KY_KR_HOLIDAYS_AMT.has(ds)) return true;
+  return false;
+}
+function kyFmtDateAMT(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function kyAddDaysAMT(ds, n){
+  const parts = ds.split('-').map(Number);
+  const d = new Date(parts[0], parts[1]-1, parts[2]);
+  d.setDate(d.getDate() + n);
+  return kyFmtDateAMT(d);
+}
+function kyNextBizDayAMT(ds){
+  let cur = ds;
+  while(kyIsNonBizDayAMT(cur)) cur = kyAddDaysAMT(cur, 1);
+  return cur;
+}
+function kyEomLocalAMT(y, m){
+  const d = new Date(y, m, 0);
+  return kyFmtDateAMT(d);
+}
+
 function calcKyDue(orderDate, term){
-  const d = new Date(orderDate);
-  const y = d.getFullYear(), m = d.getMonth();
+  const parts = orderDate.split('-').map(Number);
+  const y = parts[0], m = parts[1];
   if(term==='same') return orderDate;
-  if(term==='same_next'){ const n=new Date(d); n.setDate(n.getDate()+1); return n.toISOString().slice(0,10); }
-  if(term==='eom') return new Date(y,m+1,0).toISOString().slice(0,10);
-  if(term==='eom_next') return new Date(y,m+2,0).toISOString().slice(0,10);
-  if(term==='3m_19') return new Date(y,m+3,19).toISOString().slice(0,10);
-  return new Date(y,m+2,0).toISOString().slice(0,10);
+  if(term==='same_next') return kyAddDaysAMT(orderDate, 1);
+  if(term==='eom') return kyNextBizDayAMT(kyEomLocalAMT(y, m));
+  if(term==='eom_next'){
+    const nm = m===12?1:m+1, ny = m===12?y+1:y;
+    return kyNextBizDayAMT(kyEomLocalAMT(ny, nm));
+  }
+  if(term==='3m_19'){
+    const d = new Date(y, m-1+3, 19);
+    return kyFmtDateAMT(d);
+  }
+  const nm = m===12?1:m+1, ny = m===12?y+1:y;
+  return kyNextBizDayAMT(kyEomLocalAMT(ny, nm));
 }
 
 function kyCloseDetail(){
@@ -6911,13 +6985,13 @@ function calcImportVat(startYm, endYm){
   return Math.round(totalImport / 11); // 매입세액 (VAT 포함가의 1/11)
 }
 
-const SUPER_ADMIN_CODE = '9350';
+const SUPER_ADMIN_NAME = '유경호';  // ★ 총괄관리자 이름 기준으로 변경
 let _otpPending = null; // { action, label, callback }
 
 function isSuperAdmin(){
-  // ★ 핵심: sessionStorage에 저장된 실제 코드와 비교
-  const storedCode = sessionStorage.getItem('amt_admin_code') || '';
-  return storedCode === SUPER_ADMIN_CODE;
+  // ★ 이름 기준으로 총괄관리자 판별 (비밀번호 변경에 영향받지 않음)
+  const storedName = sessionStorage.getItem('amt_admin_session') || '';
+  return storedName === SUPER_ADMIN_NAME;
 }
 
 // OTP 요청: 총관리자가 아닌 경우 OTP 필요
@@ -7138,7 +7212,14 @@ function startSuperAdminNotifListener(){
     const notifs = snap.val();
     const unread = Object.values(notifs).filter(n => !n.read);
 
+    // ★ 팝업은 가장 최근 알림 1개만 표시 (타입별로 최신 1개)
+    const byType = {};
     unread.forEach(n => {
+      const t = n.type || 'other';
+      if(!byType[t] || (n.at||'') > (byType[t].at||'')) byType[t] = n;
+    });
+
+    Object.values(byType).forEach(n => {
       const key = 'shown_' + (n.id || n.at || n.message || '');
       if(sessionStorage.getItem(key)) return;
       sessionStorage.setItem(key, '1');
@@ -7171,8 +7252,7 @@ function startSuperAdminNotifListener(){
     });
 
     if(isSuperAdmin()){
-      const otpUnread = unread.filter(n => n.type === 'otp_request');
-      updateSuperAdminBadge(otpUnread.length);
+      updateSuperAdminBadge(unread.length);
     }
   });
 
@@ -7313,7 +7393,9 @@ function updateSuperAdminBadge(count){
   if(!badge){
     const badgeEl = document.createElement('span');
     badgeEl.id = 'superAdminNotifBadge';
-    badgeEl.style.cssText = 'background:#ef4444;color:#fff;padding:2px 6px;border-radius:10px;font-size:.65rem;font-weight:700;margin-left:4px';
+    badgeEl.style.cssText = 'background:#ef4444;color:#fff;padding:2px 6px;border-radius:10px;font-size:.65rem;font-weight:700;margin-left:4px;cursor:pointer';
+    // ★ 클릭하면 알림 패널 열기
+    badgeEl.onclick = (e) => { e.stopPropagation(); toggleSuperNotifPanel(); };
     const adminBadge = document.getElementById('amtAdminBadge');
     if(adminBadge) adminBadge.appendChild(badgeEl);
     badge = badgeEl;
@@ -7321,6 +7403,114 @@ function updateSuperAdminBadge(count){
   badge.textContent = count > 0 ? count : '';
   badge.style.display = count > 0 ? 'inline' : 'none';
 }
+
+/* ═══ 총관리자 알림 패널 ═══ */
+let _superNotifPanelOpen = false;
+
+function toggleSuperNotifPanel(){
+  const existing = document.getElementById('superNotifPanel');
+  if(existing){ existing.remove(); _superNotifPanelOpen = false; return; }
+  _superNotifPanelOpen = true;
+  renderSuperNotifPanel();
+}
+
+async function renderSuperNotifPanel(){
+  const existing = document.getElementById('superNotifPanel');
+  if(existing) existing.remove();
+
+  const fb = window._fb;
+  let notifs = [];
+  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
+
+  if(fb && fb.ready){
+    try{
+      const snap = await fb.get(fb.ref(fb.db, 'amt_notifications'));
+      if(snap.exists()){
+        const data = snap.val();
+        notifs = Object.entries(data).map(([id, n]) => ({...n, _fbId: id}));
+        // ★ 3일 이상 된 알림 자동 삭제
+        for(const n of notifs){
+          if(n.at && n.at < threeDaysAgo){
+            try{ await fb.set(fb.ref(fb.db, 'amt_notifications/' + n._fbId), null); }catch(e){}
+          }
+        }
+        notifs = notifs.filter(n => !n.at || n.at >= threeDaysAgo);
+        notifs.sort((a,b) => (b.at||'').localeCompare(a.at||''));
+      }
+    }catch(e){}
+  }
+
+  const panel = document.createElement('div');
+  panel.id = 'superNotifPanel';
+  panel.style.cssText = `
+    position:fixed;top:70px;right:16px;z-index:10000;
+    background:#fff;border-radius:14px;
+    width:min(94vw,360px);max-height:70vh;
+    box-shadow:0 8px 32px rgba(0,0,0,.22);
+    border:1.5px solid #e4e7ef;
+    display:flex;flex-direction:column;overflow:hidden;
+  `;
+
+  const notifRows = notifs.length ? notifs.map(n => {
+    const timeStr = n.at ? new Date(n.at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    const dot = n.read ? '' : '<span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;margin-right:6px;flex-shrink:0"></span>';
+    const typeIcon = n.type==='otp_request'?'🔑':n.type==='code_request'?'🔑':n.type==='ky_order'?'📦':n.type==='activity'?'📝':'🔔';
+    return `<div style="padding:12px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:flex-start;gap:6px;cursor:pointer;${n.read?'':'background:#fefce8'}"
+      onclick="markSuperNotifRead('${n._fbId}')">
+      <span style="margin-top:2px">${typeIcon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center">${dot}<span style="font-size:.82rem;font-weight:${n.read?500:700};color:#111;word-break:break-all">${(n.message||'').slice(0,80)}</span></div>
+        <div style="font-size:.72rem;color:#9ca3af;margin-top:2px">${timeStr}</div>
+      </div>
+    </div>`;
+  }).join('') : '<div style="padding:32px;text-align:center;color:#9ca3af;font-size:.85rem">알림이 없습니다</div>';
+
+  panel.innerHTML = `
+    <div style="padding:12px 16px;border-bottom:1.5px solid #e4e7ef;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+      <span style="font-weight:800;font-size:.92rem">🔔 알림 (최근 3일)</span>
+      <div style="display:flex;gap:6px">
+        <button onclick="markAllSuperNotifsRead()" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:4px 10px;font-size:.75rem;font-weight:700;color:#1d4ed8;cursor:pointer">모두 읽음</button>
+        <button onclick="document.getElementById('superNotifPanel').remove()" style="background:#f3f4f6;border:none;border-radius:6px;padding:4px 8px;font-size:.85rem;cursor:pointer">✕</button>
+      </div>
+    </div>
+    <div style="overflow-y:auto;flex:1">${notifRows}</div>
+  `;
+  document.body.appendChild(panel);
+
+  // 외부 클릭 시 닫기
+  setTimeout(() => {
+    document.addEventListener('click', function handler(e){
+      const p = document.getElementById('superNotifPanel');
+      if(p && !p.contains(e.target) && !e.target.closest('#superAdminNotifBadge')){
+        p.remove();
+        document.removeEventListener('click', handler);
+      }
+    });
+  }, 100);
+}
+
+async function markSuperNotifRead(id){
+  const fb = window._fb;
+  if(!fb || !fb.ready || !id) return;
+  try{ await fb.set(fb.ref(fb.db, 'amt_notifications/' + id + '/read'), true); }catch(e){}
+  renderSuperNotifPanel();
+}
+
+async function markAllSuperNotifsRead(){
+  const fb = window._fb;
+  if(!fb || !fb.ready) return;
+  try{
+    const snap = await fb.get(fb.ref(fb.db, 'amt_notifications'));
+    if(!snap.exists()) return;
+    const data = snap.val();
+    for(const [id, n] of Object.entries(data)){
+      if(!n.read) await fb.set(fb.ref(fb.db, 'amt_notifications/' + id + '/read'), true);
+    }
+  }catch(e){}
+  updateSuperAdminBadge(0);
+  renderSuperNotifPanel();
+}
+
 
 
 /* ═══════════════════════════════════════════════════════
@@ -7407,7 +7597,7 @@ window.addEventListener('DOMContentLoaded',()=>{
 // PWA Service Worker 등록 (github.io 배포 환경에서만)
 if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/AMT/sw.js?v=20260413-hotfix3')
+    navigator.serviceWorker.register('/AMT/sw.js?v=20260416-fix1')
       .then(r=>console.log('[AMT SW] 등록 완료:', r.scope))
       .catch(e=>console.log('[AMT SW] 등록 스킵:', e.message));
   });
