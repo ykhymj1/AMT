@@ -1969,7 +1969,7 @@ function ym(ds){ return String(ds||'').slice(0,7); }
 function ymd(){ return fmtDateLocal(new Date()); }
 function orderAmount(o){ return (Number(o&&o.total)||0) + (Number(o&&o.fee)||0); }
 
-/* ─── 대한민국 공휴일 (토요일/공휴일이면 다음 영업일로 조정) ───
+/* ─── 대한민국 공휴일 (토요일/공휴일이면 전날 영업일로 조정) ───
    대체공휴일 포함. 매년 고정 + 음력계산 없이 주요 날짜 하드코딩.
    필요 시 연도 추가 가능. ─────────────────────────────────── */
 const KR_HOLIDAYS = new Set([
@@ -2005,16 +2005,7 @@ function isNonBizDay(ds){
   return false;
 }
 
-// 말일 기준으로 토요일/공휴일이면 하루씩 뒤로 미룸 (다음 영업일 찾기)
-function nextBizDay(ds){
-  let cur = ds;
-  while(isNonBizDay(cur)){
-    cur = addDays(cur, 1);
-  }
-  return cur;
-}
-
-// 역방향 (필요 시 유지)
+// 말일 기준으로 토요일/공휴일이면 하루씩 앞으로 당김 (영업일 찾기)
 function prevBizDay(ds){
   let cur = ds;
   while(isNonBizDay(cur)){
@@ -2023,10 +2014,10 @@ function prevBizDay(ds){
   return cur;
 }
 
-// eom: 말일 계산 후 토요일/공휴일이면 다음 영업일로
+// eom: 말일 계산 후 토요일/공휴일 조정
 function eomBiz(y, m){
   const lastDay = eom(y, m);
-  return nextBizDay(lastDay);
+  return prevBizDay(lastDay);
 }
 
 function calcDue(orderDate, term, dealerId){
@@ -2040,7 +2031,7 @@ function calcDue(orderDate, term, dealerId){
   switch(term){
     case 'same':      return orderDate;
     case 'same_next': return orderDate; // 보수적: 당일
-    case 'eom':       return eomBiz(y, m);           // 말일 → 토/일/공휴일이면 다음 영업일
+    case 'eom':       return eomBiz(y, m);           // 말일 → 토/공휴일이면 전날
     case 'eom_next':  return m===12 ? eomBiz(y+1,1) : eomBiz(y, m+1); // 다음달 말일 동일 적용
     default:          return orderDate;
   }
@@ -5942,28 +5933,35 @@ function kySetSync(on, label){
   if(label) lb.textContent = label;
 }
 
-/* ═══ KY 신규주문 팝업 창 ═══ */
-function playOrderAlertSound(){
+/* ═══ KY 신규주문 알림 소리 ═══ */
+function playKyOrderSound(){
   try{
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    // 2음 알림음
-    [[880,0],[1100,0.18]].forEach(([freq,delay])=>{
+    const play = (freq, start, dur) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.connect(gain); gain.connect(ctx.destination);
-      osc.type = 'sine';
       osc.frequency.value = freq;
-      gain.gain.setValueAtTime(0, ctx.currentTime+delay);
-      gain.gain.linearRampToValueAtTime(0.35, ctx.currentTime+delay+0.04);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime+delay+0.55);
-      osc.start(ctx.currentTime+delay);
-      osc.stop(ctx.currentTime+delay+0.6);
-    });
-  }catch(e){}
+      osc.type = 'sine';
+      gain.gain.setValueAtTime(0, ctx.currentTime + start);
+      gain.gain.linearRampToValueAtTime(0.4, ctx.currentTime + start + 0.01);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + start + dur);
+      osc.start(ctx.currentTime + start);
+      osc.stop(ctx.currentTime + start + dur + 0.05);
+    };
+    play(880, 0,    0.12);
+    play(1100, 0.15, 0.12);
+    play(1320, 0.30, 0.20);
+  }catch(e){ console.warn('알림음 재생 실패', e); }
 }
+
+/* ═══ KY 신규주문 팝업 창 ═══ */
 function showKyNewOrderPopup(order){
   const old = document.getElementById('kyNewOrderPopup');
   if(old) old.remove();
+
+  // ★ 알림 소리 재생
+  playKyOrderSound();
 
   const popup = document.createElement('div');
   popup.id = 'kyNewOrderPopup';
@@ -6032,8 +6030,7 @@ function kyStartListener(){
                 requireInteraction: true
               });
             }
-            // ★ 화면 팝업 창 (AMT 앱 내) + 알림음
-            playOrderAlertSound();
+            // ★ 화면 팝업 창 (AMT 앱 내)
             showKyNewOrderPopup(o);
           });
           const badge = document.getElementById('kyNewBadge');
@@ -6367,18 +6364,19 @@ function kyRenderOrders(list){
       ${o.statusNote?`<div style="font-size:.78rem;color:var(--text2);background:var(--surface2);border-radius:6px;padding:7px 10px;margin-bottom:10px;border-left:3px solid var(--yellow)">📝 관리자메모: ${o.statusNote}${o.processedBy?` (${o.processedBy})`:''}</div>`:''}
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding-top:10px;border-top:1px solid var(--border)">
         ${o.status==='pending'?`
+          <button class="btn btn-success" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','accepted')">✅ 접수</button>
           ${o.orderType==='return'?
-            `<button class="btn btn-primary" style="padding:8px 18px;font-size:.88rem;background:#2563eb;border-color:#2563eb" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
-            `<button class="btn btn-primary" style="padding:8px 18px;font-size:.88rem;background:#2563eb;border-color:#2563eb" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고</button>`
+            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem;color:#16a34a;border-color:#16a34a" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
+            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고</button>`
           }
         `:o.status==='accepted'?`
           ${o.orderType==='return'?
-            `<button class="btn btn-primary" style="padding:8px 18px;font-size:.88rem;background:#2563eb;border-color:#2563eb" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
-            `<button class="btn btn-primary" style="padding:8px 18px;font-size:.88rem;background:#2563eb;border-color:#2563eb" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고처리</button>`
+            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem;color:#16a34a;border-color:#16a34a" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
+            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고처리</button>`
           }
           <button class="btn btn-ghost btn-sm" onclick="kyOpenAction('${o.id}','pending')">↩ 대기로</button>
         `:o.status==='shipped'||o.status==='received'?`
-          <button class="btn btn-ghost btn-sm" onclick="kyOpenAction('${o.id}','pending')">↩ 대기로</button>
+          <button class="btn btn-ghost btn-sm" onclick="kyOpenAction('${o.id}','accepted')">↩ 접수로</button>
         `:''}
         <span style="margin-left:auto;font-family:monospace;font-size:.9rem;font-weight:800;color:var(--yellow)">${fmt(o.total)}원</span>
         ${isSuperAdmin() ? `<button onclick="kyDeleteOrder('${o.id}')" style="margin-left:8px;background:none;border:1px solid #fca5a5;color:#ef4444;border-radius:6px;padding:4px 10px;font-size:.72rem;cursor:pointer">🗑 삭제</button>` : ''}
@@ -6677,15 +6675,64 @@ async function kyAutoUpdateOnReturn(order, note, now){
 }
 
 
+// ★ KY 공휴일 (AMT 내 KY 수금일 계산용)
+const KY_KR_HOLIDAYS_AMT = new Set([
+  '2025-01-01','2025-01-28','2025-01-29','2025-01-30',
+  '2025-03-01','2025-05-05','2025-05-06','2025-06-06',
+  '2025-08-15','2025-10-03','2025-10-06','2025-10-07','2025-10-08','2025-12-25',
+  '2026-01-01','2026-01-28','2026-01-29','2026-01-30',
+  '2026-03-01','2026-03-02','2026-05-05','2026-06-06','2026-08-17',
+  '2026-09-24','2026-09-25','2026-09-26','2026-10-03','2026-10-05',
+  '2026-10-09','2026-12-25',
+  '2027-01-01','2027-02-17','2027-02-18','2027-02-19',
+  '2027-03-01','2027-05-05','2027-05-24','2027-05-25',
+  '2027-06-06','2027-06-07','2027-08-15','2027-08-16',
+  '2027-10-03','2027-10-09','2027-10-11','2027-10-14','2027-10-15',
+  '2027-12-25','2027-12-27',
+]);
+function kyIsNonBizDayAMT(ds){
+  const parts = ds.split('-').map(Number);
+  const d = new Date(parts[0], parts[1]-1, parts[2]);
+  const dow = d.getDay();
+  if(dow === 0 || dow === 6) return true;
+  if(KY_KR_HOLIDAYS_AMT.has(ds)) return true;
+  return false;
+}
+function kyFmtDateAMT(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function kyAddDaysAMT(ds, n){
+  const parts = ds.split('-').map(Number);
+  const d = new Date(parts[0], parts[1]-1, parts[2]);
+  d.setDate(d.getDate() + n);
+  return kyFmtDateAMT(d);
+}
+function kyNextBizDayAMT(ds){
+  let cur = ds;
+  while(kyIsNonBizDayAMT(cur)) cur = kyAddDaysAMT(cur, 1);
+  return cur;
+}
+function kyEomLocalAMT(y, m){
+  const d = new Date(y, m, 0);
+  return kyFmtDateAMT(d);
+}
+
 function calcKyDue(orderDate, term){
-  const d = new Date(orderDate);
-  const y = d.getFullYear(), m = d.getMonth();
+  const parts = orderDate.split('-').map(Number);
+  const y = parts[0], m = parts[1];
   if(term==='same') return orderDate;
-  if(term==='same_next'){ const n=new Date(d); n.setDate(n.getDate()+1); return n.toISOString().slice(0,10); }
-  if(term==='eom') return new Date(y,m+1,0).toISOString().slice(0,10);
-  if(term==='eom_next') return new Date(y,m+2,0).toISOString().slice(0,10);
-  if(term==='3m_19') return new Date(y,m+3,19).toISOString().slice(0,10);
-  return new Date(y,m+2,0).toISOString().slice(0,10);
+  if(term==='same_next') return kyAddDaysAMT(orderDate, 1);
+  if(term==='eom') return kyNextBizDayAMT(kyEomLocalAMT(y, m));
+  if(term==='eom_next'){
+    const nm = m===12?1:m+1, ny = m===12?y+1:y;
+    return kyNextBizDayAMT(kyEomLocalAMT(ny, nm));
+  }
+  if(term==='3m_19'){
+    const d = new Date(y, m-1+3, 19);
+    return kyFmtDateAMT(d);
+  }
+  const nm = m===12?1:m+1, ny = m===12?y+1:y;
+  return kyNextBizDayAMT(kyEomLocalAMT(ny, nm));
 }
 
 function kyCloseDetail(){
@@ -6938,12 +6985,12 @@ function calcImportVat(startYm, endYm){
   return Math.round(totalImport / 11); // 매입세액 (VAT 포함가의 1/11)
 }
 
-const SUPER_ADMIN_NAME = '유경호';
+const SUPER_ADMIN_NAME = '유경호';  // ★ 총괄관리자 이름 기준으로 변경
 let _otpPending = null; // { action, label, callback }
 
 function isSuperAdmin(){
-  // ★ 이름 기준으로 총괄관리자 판별 (비밀번호 변경해도 권한 유지)
-  const storedName = sessionStorage.getItem(AMT_ADMIN_SESSION) || '';
+  // ★ 이름 기준으로 총괄관리자 판별 (비밀번호 변경에 영향받지 않음)
+  const storedName = sessionStorage.getItem('amt_admin_session') || '';
   return storedName === SUPER_ADMIN_NAME;
 }
 
@@ -7165,23 +7212,17 @@ function startSuperAdminNotifListener(){
     const notifs = snap.val();
     const unread = Object.values(notifs).filter(n => !n.read);
 
-    // ★ 팝업은 가장 최근 알림 1개만 표시 (중복 방지)
-    const unseen = unread.filter(n => {
-      const key = 'shown_' + (n.id || n.at || n.message || '');
-      return !sessionStorage.getItem(key);
+    // ★ 팝업은 가장 최근 알림 1개만 표시 (타입별로 최신 1개)
+    const byType = {};
+    unread.forEach(n => {
+      const t = n.type || 'other';
+      if(!byType[t] || (n.at||'') > (byType[t].at||'')) byType[t] = n;
     });
-    // at 기준 내림차순 정렬 → 최신 1개만
-    unseen.sort((a,b) => (b.at||'').localeCompare(a.at||''));
-    const toShow = unseen.slice(0, 1);
 
-    toShow.forEach(n => {
+    Object.values(byType).forEach(n => {
       const key = 'shown_' + (n.id || n.at || n.message || '');
+      if(sessionStorage.getItem(key)) return;
       sessionStorage.setItem(key, '1');
-      // 나머지 unseen도 모두 shown 처리 (팝업은 안 띄우되 다음에 또 뜨지 않도록)
-      unseen.forEach(m => {
-        const k2 = 'shown_' + (m.id || m.at || m.message || '');
-        sessionStorage.setItem(k2, '1');
-      });
 
       if(n.type === 'otp_request'){
         if(isSuperAdmin()) showSuperAdminNotif(n);
@@ -7211,8 +7252,7 @@ function startSuperAdminNotifListener(){
     });
 
     if(isSuperAdmin()){
-      const otpUnread = unread.filter(n => n.type === 'otp_request');
-      updateSuperAdminBadge(otpUnread.length);
+      updateSuperAdminBadge(unread.length);
     }
   });
 
@@ -7354,7 +7394,8 @@ function updateSuperAdminBadge(count){
     const badgeEl = document.createElement('span');
     badgeEl.id = 'superAdminNotifBadge';
     badgeEl.style.cssText = 'background:#ef4444;color:#fff;padding:2px 6px;border-radius:10px;font-size:.65rem;font-weight:700;margin-left:4px;cursor:pointer';
-    badgeEl.onclick = (e) => { e.stopPropagation(); showSuperAdminNotifPanel(); };
+    // ★ 클릭하면 알림 패널 열기
+    badgeEl.onclick = (e) => { e.stopPropagation(); toggleSuperNotifPanel(); };
     const adminBadge = document.getElementById('amtAdminBadge');
     if(adminBadge) adminBadge.appendChild(badgeEl);
     badge = badgeEl;
@@ -7363,89 +7404,113 @@ function updateSuperAdminBadge(count){
   badge.style.display = count > 0 ? 'inline' : 'none';
 }
 
-/* ═══ 총괄관리자 알림 패널 ═══ */
-async function showSuperAdminNotifPanel(){
+/* ═══ 총관리자 알림 패널 ═══ */
+let _superNotifPanelOpen = false;
+
+function toggleSuperNotifPanel(){
+  const existing = document.getElementById('superNotifPanel');
+  if(existing){ existing.remove(); _superNotifPanelOpen = false; return; }
+  _superNotifPanelOpen = true;
+  renderSuperNotifPanel();
+}
+
+async function renderSuperNotifPanel(){
+  const existing = document.getElementById('superNotifPanel');
+  if(existing) existing.remove();
+
   const fb = window._fb;
-  if(!fb || !fb.ready){ toast('Firebase 미연결','error'); return; }
+  let notifs = [];
+  const threeDaysAgo = new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString();
 
-  // 3일 지난 알림 먼저 삭제
-  const threeDaysAgo = new Date(Date.now() - 3*24*60*60*1000).toISOString();
-  let allNotifs = {};
-  try{
-    const snap = await fb.get(fb.ref(fb.db, 'amt_notifications'));
-    if(snap.exists()) allNotifs = snap.val();
-  }catch(e){}
-
-  // 3일 이상 된 알림 삭제
-  const deleteKeys = Object.entries(allNotifs).filter(([k,n]) => (n.at||'') < threeDaysAgo).map(([k])=>k);
-  for(const k of deleteKeys){
-    try{ await fb.remove(fb.ref(fb.db,'amt_notifications/'+k)); delete allNotifs[k]; }catch(e){}
+  if(fb && fb.ready){
+    try{
+      const snap = await fb.get(fb.ref(fb.db, 'amt_notifications'));
+      if(snap.exists()){
+        const data = snap.val();
+        notifs = Object.entries(data).map(([id, n]) => ({...n, _fbId: id}));
+        // ★ 3일 이상 된 알림 자동 삭제
+        for(const n of notifs){
+          if(n.at && n.at < threeDaysAgo){
+            try{ await fb.set(fb.ref(fb.db, 'amt_notifications/' + n._fbId), null); }catch(e){}
+          }
+        }
+        notifs = notifs.filter(n => !n.at || n.at >= threeDaysAgo);
+        notifs.sort((a,b) => (b.at||'').localeCompare(a.at||''));
+      }
+    }catch(e){}
   }
-
-  const notifList = Object.entries(allNotifs).map(([id,n])=>({...n,id}));
-  notifList.sort((a,b)=>(b.at||'').localeCompare(a.at||''));
-
-  // 패널 렌더
-  const old = document.getElementById('superNotifPanel');
-  if(old){ old.remove(); return; }
 
   const panel = document.createElement('div');
   panel.id = 'superNotifPanel';
   panel.style.cssText = `
-    position:fixed;top:66px;right:16px;z-index:9999;
-    width:min(94vw,400px);max-height:70vh;overflow-y:auto;
-    background:#fff;border:1.5px solid #e4e7ef;border-radius:14px;
-    box-shadow:0 12px 36px rgba(0,0,0,.18);
-    animation:toastIn .2s ease;
+    position:fixed;top:70px;right:16px;z-index:10000;
+    background:#fff;border-radius:14px;
+    width:min(94vw,360px);max-height:70vh;
+    box-shadow:0 8px 32px rgba(0,0,0,.22);
+    border:1.5px solid #e4e7ef;
+    display:flex;flex-direction:column;overflow:hidden;
   `;
 
-  const rows = notifList.length ? notifList.map(n => {
-    const at = n.at ? new Date(n.at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
-    const isRead = n.read;
-    const typeColor = n.type==='otp_request'?'#f59e0b':n.type==='code_request'?'#2563eb':n.type==='ky_order'?'#d97706':'#6b7280';
-    const typeLabel = n.type==='otp_request'?'OTP':n.type==='code_request'?'코드요청':n.type==='ky_order'?'KY주문':'활동';
-    return `<div style="padding:12px 14px;border-bottom:1px solid #f3f4f6;background:${isRead?'#fff':'#eff6ff'};transition:.15s">
-      <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px">
-        <span style="background:${typeColor};color:#fff;font-size:.6rem;font-weight:700;padding:1px 6px;border-radius:8px">${typeLabel}</span>
-        <span style="font-size:.7rem;color:#9ca3af;margin-left:auto">${at}</span>
-        ${!isRead?'<span style="width:7px;height:7px;background:#ef4444;border-radius:50%;flex-shrink:0"></span>':''}
+  const notifRows = notifs.length ? notifs.map(n => {
+    const timeStr = n.at ? new Date(n.at).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+    const dot = n.read ? '' : '<span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;margin-right:6px;flex-shrink:0"></span>';
+    const typeIcon = n.type==='otp_request'?'🔑':n.type==='code_request'?'🔑':n.type==='ky_order'?'📦':n.type==='activity'?'📝':'🔔';
+    return `<div style="padding:12px 16px;border-bottom:1px solid #f0f0f0;display:flex;align-items:flex-start;gap:6px;cursor:pointer;${n.read?'':'background:#fefce8'}"
+      onclick="markSuperNotifRead('${n._fbId}')">
+      <span style="margin-top:2px">${typeIcon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;align-items:center">${dot}<span style="font-size:.82rem;font-weight:${n.read?500:700};color:#111;word-break:break-all">${(n.message||'').slice(0,80)}</span></div>
+        <div style="font-size:.72rem;color:#9ca3af;margin-top:2px">${timeStr}</div>
       </div>
-      <div style="font-size:.82rem;color:#111827;line-height:1.5">${n.type==='otp_request'?`<b style="color:#f59e0b">OTP 요청</b> — ${n.requestedBy||'?'}이(가) <b>"${n.action||''}"</b> 요청<br><span style="font-size:1.1rem;letter-spacing:4px;color:#34d399;font-weight:800">${n.otp||''}</span>`:n.message||''}</div>
     </div>`;
-  }).join('') : '<div style="padding:28px;text-align:center;color:#9ca3af;font-size:.85rem">알림이 없습니다</div>';
+  }).join('') : '<div style="padding:32px;text-align:center;color:#9ca3af;font-size:.85rem">알림이 없습니다</div>';
 
   panel.innerHTML = `
-    <div style="padding:12px 14px;background:#1e2330;color:#fff;border-radius:13px 13px 0 0;display:flex;align-items:center;justify-content:space-between">
-      <span style="font-weight:700;font-size:.88rem">🔔 알림 목록 (${notifList.length}개)</span>
-      <div style="display:flex;gap:8px">
-        <button onclick="markAllNotifsRead()" style="font-size:.72rem;padding:4px 10px;border-radius:8px;border:1px solid rgba(255,255,255,.3);background:rgba(255,255,255,.12);color:#fff;cursor:pointer;font-weight:700">✅ 전체 읽음</button>
-        <button onclick="document.getElementById('superNotifPanel').remove()" style="font-size:.8rem;padding:4px 10px;border-radius:8px;border:none;background:rgba(255,255,255,.15);color:#fff;cursor:pointer">✕</button>
+    <div style="padding:12px 16px;border-bottom:1.5px solid #e4e7ef;display:flex;justify-content:space-between;align-items:center;flex-shrink:0">
+      <span style="font-weight:800;font-size:.92rem">🔔 알림 (최근 3일)</span>
+      <div style="display:flex;gap:6px">
+        <button onclick="markAllSuperNotifsRead()" style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:4px 10px;font-size:.75rem;font-weight:700;color:#1d4ed8;cursor:pointer">모두 읽음</button>
+        <button onclick="document.getElementById('superNotifPanel').remove()" style="background:#f3f4f6;border:none;border-radius:6px;padding:4px 8px;font-size:.85rem;cursor:pointer">✕</button>
       </div>
     </div>
-    <div>${rows}</div>
+    <div style="overflow-y:auto;flex:1">${notifRows}</div>
   `;
   document.body.appendChild(panel);
-  // 바깥 클릭 시 닫기
-  setTimeout(()=>{ document.addEventListener('click', function _close(e){ if(!panel.contains(e.target)){ panel.remove(); document.removeEventListener('click',_close); } }); }, 100);
+
+  // 외부 클릭 시 닫기
+  setTimeout(() => {
+    document.addEventListener('click', function handler(e){
+      const p = document.getElementById('superNotifPanel');
+      if(p && !p.contains(e.target) && !e.target.closest('#superAdminNotifBadge')){
+        p.remove();
+        document.removeEventListener('click', handler);
+      }
+    });
+  }, 100);
 }
 
-async function markAllNotifsRead(){
+async function markSuperNotifRead(id){
+  const fb = window._fb;
+  if(!fb || !fb.ready || !id) return;
+  try{ await fb.set(fb.ref(fb.db, 'amt_notifications/' + id + '/read'), true); }catch(e){}
+  renderSuperNotifPanel();
+}
+
+async function markAllSuperNotifsRead(){
   const fb = window._fb;
   if(!fb || !fb.ready) return;
   try{
-    const snap = await fb.get(fb.ref(fb.db,'amt_notifications'));
+    const snap = await fb.get(fb.ref(fb.db, 'amt_notifications'));
     if(!snap.exists()) return;
-    const updates = {};
-    Object.entries(snap.val()).forEach(([k,n])=>{ if(!n.read) updates[k+'/read'] = true; });
-    for(const [path,val] of Object.entries(updates)){
-      await fb.set(fb.ref(fb.db,'amt_notifications/'+path), val);
+    const data = snap.val();
+    for(const [id, n] of Object.entries(data)){
+      if(!n.read) await fb.set(fb.ref(fb.db, 'amt_notifications/' + id + '/read'), true);
     }
-    updateSuperAdminBadge(0);
-    const panel = document.getElementById('superNotifPanel');
-    if(panel) panel.remove();
-    toast('모든 알림을 읽음 처리했습니다','info');
-  }catch(e){ toast('읽음 처리 실패','error'); }
+  }catch(e){}
+  updateSuperAdminBadge(0);
+  renderSuperNotifPanel();
 }
+
 
 
 /* ═══════════════════════════════════════════════════════
@@ -7532,7 +7597,7 @@ window.addEventListener('DOMContentLoaded',()=>{
 // PWA Service Worker 등록 (github.io 배포 환경에서만)
 if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/AMT/sw.js?v=20260413-hotfix3')
+    navigator.serviceWorker.register('/AMT/sw.js?v=20260416-fix1')
       .then(r=>console.log('[AMT SW] 등록 완료:', r.scope))
       .catch(e=>console.log('[AMT SW] 등록 스킵:', e.message));
   });
