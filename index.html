@@ -593,7 +593,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
     <div class="logo-text"><span>AMT</span> · KY 관리시스템</div>
   </div>
   <div class="header-right">
-    <span class="admin-name-chip" id="amtAdminBadge" onclick="amtAdminLogout()" title="클릭시 로그아웃">👤 ─</span>
+    <span class="admin-name-chip" id="amtAdminBadge">👤 ─</span>
     <div class="sync-badge">
       <div class="sync-dot off pulse" id="syncDot"></div>
       <span id="syncLabel">로컬모드</span>
@@ -1309,35 +1309,6 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
       ⚠️ Firebase 미연결 — 설정 탭에서 Firebase 정보를 입력·저장하고 새로고침하세요.
     </div>
 
-    <!-- KPI -->
-    <div class="kpi-grid" style="margin-bottom:14px">
-      <div class="kpi" style="--kpi-color:var(--ky)"><div class="kpi-label">전체 주문</div><div class="kpi-value" id="kyKpiTotal">0</div><div class="kpi-sub">건</div></div>
-      <div class="kpi" style="--kpi-color:var(--yellow)"><div class="kpi-label">⏳ 대기중</div><div class="kpi-value" id="kyKpiPending" style="color:var(--yellow)">0</div><div class="kpi-sub">건</div></div>
-      <div class="kpi" style="--kpi-color:var(--green)"><div class="kpi-label">✅ 접수완료</div><div class="kpi-value" id="kyKpiAccepted" style="color:var(--green)">0</div><div class="kpi-sub">건</div></div>
-      <div class="kpi" style="--kpi-color:var(--ky)"><div class="kpi-label">이번달 금액</div><div class="kpi-value" id="kyKpiAmt">0</div><div class="kpi-sub">원</div></div>
-    </div>
-
-    <!-- Filter -->
-    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px;padding:10px 12px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">
-      <select id="kyFStatus" onchange="kyApplyFilter()" style="flex:1;min-width:110px">
-        <option value="">전체 상태</option>
-        <option value="pending">대기중</option>
-        <option value="accepted">접수완료</option>
-        <option value="shipped">출고완료</option>
-      </select>
-      <select id="kyFDealer" onchange="kyApplyFilter()" style="flex:1;min-width:110px">
-        <option value="">전체 대리점</option>
-      </select>
-      <input type="date" id="kyFFrom" onchange="kyApplyFilter()" title="시작일" style="flex:1;min-width:110px">
-      <input type="date" id="kyFTo" onchange="kyApplyFilter()" title="종료일" style="flex:1;min-width:110px">
-      <button class="btn btn-ghost btn-sm" onclick="kyResetFilter()">초기화</button>
-    </div>
-
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <div style="font-weight:800;font-size:.88rem;display:flex;align-items:center;gap:8px">
-        주문 목록
-        <span id="kyNewBadge" style="display:none;background:#ef4444;color:#fff;padding:2px 8px;border-radius:10px;font-size:.6rem;font-weight:700;animation:pulse 1.5s infinite">🔔 새 주문</span>
-      </div>
       <span id="kyOrderCount" style="font-size:.8rem;color:var(--text3)"></span>
     </div>
 
@@ -3145,15 +3116,13 @@ function renderInvHistory(){
 
   if(!list.length){ document.getElementById('invHistory').innerHTML=emptyHtml('이력 없음'); return; }
   document.getElementById('invHistory').innerHTML=`<div class="table-wrap"><table>
-    <thead><tr><th>날짜</th><th>회사</th><th>제품</th><th>구분</th><th>수량</th><th>메모</th><th style="text-align:center">수정</th><th style="text-align:center">삭제</th></tr></thead>
+    <thead><tr><th>날짜</th><th>회사</th><th>제품</th><th>구분</th><th>수량</th><th>메모</th></tr></thead>
     <tbody>
     ${list.map(i=>{
       const c=pColors[i.product]||'var(--gray)';
       const tc=i.type==='out'?'var(--red)':i.type==='adjust'?'var(--yellow)':'var(--green)';
       const co=i.company||'AMT';
       const isAuto=!!(i.relOrder||i.relInternal); // 자동생성 여부
-      const editBtn=`<button class="btn btn-xs btn-outline" onclick="openEditInvLog('${i.id}','${isAuto}')" title="${isAuto?'⚠️ 연동항목 수정':'수정'}">✏️${isAuto?' ⚠':''}</button>`;
-      const delBtn=`<button class="btn btn-danger btn-xs" onclick="deleteInvLog('${i.id}','${isAuto}')" title="삭제">✕</button>`;
       return `<tr>
         <td class="td-mono">${i.date}</td>
         <td><span class="${co==='AMT'?'company-badge-amt':'company-badge-ky'}">${co}</span></td>
@@ -3161,8 +3130,6 @@ function renderInvHistory(){
         <td style="color:${tc};font-weight:600;font-size:.75rem">${i.type==='in'?'입고':i.type==='out'?'출고':'조정'}</td>
         <td class="td-mono td-r" style="color:${i.qty<0?'var(--red)':'var(--green)'};font-weight:700">${i.qty>0?'+':''}${fmt(i.qty)}</td>
         <td style="font-size:.75rem;color:var(--text2)">${i.memo||''}</td>
-        <td class="td-c">${editBtn}</td>
-        <td class="td-c">${delBtn}</td>
       </tr>`;
     }).join('')}
     </tbody>
@@ -3170,187 +3137,6 @@ function renderInvHistory(){
 }
 
 // 재고이력 수정 모달
-function openEditInvLog(id, isAuto){
-  const i=invLogs.find(x=>x.id===id);
-  if(!i) return;
-  const old=document.getElementById('editInvModal');
-  if(old) old.remove();
-
-  const autoWarn = (isAuto==='true'||isAuto===true)
-    ? `<div style="background:#fef3c7;border:1px solid #fcd34d;border-radius:8px;padding:8px 12px;margin-bottom:12px;font-size:.78rem;color:#92400e">
-        ⚠️ 발주/내부거래 연동 자동생성 항목입니다.<br>수정 시 원본 데이터와 불일치가 생길 수 있습니다.
-       </div>` : '';
-
-  const modal=document.createElement('div');
-  modal.id='editInvModal';
-  modal.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:9999';
-  modal.innerHTML=`
-    <div style="background:#fff;border-radius:12px;padding:24px;min-width:300px;max-width:400px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,.18)">
-      <div style="font-size:1rem;font-weight:700;margin-bottom:16px">재고이력 수정</div>
-      ${autoWarn}
-      <div style="font-size:.82rem;background:#f8fafc;border-radius:8px;padding:10px;margin-bottom:14px">
-        <b>${i.company||'AMT'}</b> · ${i.product} · ${i.type==='in'?'입고':i.type==='out'?'출고':'조정'}
-      </div>
-      <div style="display:grid;gap:12px">
-        <div>
-          <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:4px">날짜</label>
-          <input type="date" id="editInvDate" value="${i.date}"
-            style="width:100%;padding:8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.9rem;box-sizing:border-box">
-        </div>
-        <div>
-          <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:4px">수량 (입고:양수, 출고:음수)</label>
-          <input type="number" id="editInvQty" value="${i.qty}"
-            style="width:100%;padding:8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.9rem;box-sizing:border-box">
-        </div>
-        <div>
-          <label style="font-size:.8rem;font-weight:600;display:block;margin-bottom:4px">메모</label>
-          <input type="text" id="editInvMemo" value="${i.memo||''}"
-            style="width:100%;padding:8px;border:1.5px solid #d1d5db;border-radius:8px;font-size:.9rem;box-sizing:border-box">
-        </div>
-      </div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
-        <button type="button" onclick="document.getElementById('editInvModal').remove()"
-          style="padding:8px 16px;border-radius:8px;border:1.5px solid #d1d5db;background:#fff;cursor:pointer;font-size:.85rem">취소</button>
-        <button type="button" onclick="confirmEditInvLog('${id}')"
-          style="padding:8px 18px;border-radius:8px;border:none;background:#2563eb;color:#fff;cursor:pointer;font-size:.85rem;font-weight:600">저장</button>
-      </div>
-    </div>`;
-  document.body.appendChild(modal);
-  modal.addEventListener('click', e=>{ if(e.target===modal) modal.remove(); });
-}
-
-async function confirmEditInvLog(id){
-  await requireOtp('재고이력 수정', async () => { await _doConfirmEditInvLog(id); });
-}
-async function _doConfirmEditInvLog(id){
-  const i=invLogs.find(x=>x.id===id);
-  if(!i) return;
-  const newDate=document.getElementById('editInvDate').value;
-  const newQty=parseInt(document.getElementById('editInvQty').value)||0;
-  const newMemo=document.getElementById('editInvMemo').value;
-  if(!newDate){ toast('날짜를 입력하세요','error'); return; }
-  if(newQty===0){ toast('수량은 0이 될 수 없습니다','error'); return; }
-
-  const oldQty=i.qty;
-  addAuditLog('edit','재고',`수정: ${i.company||'AMT'} ${i.product} ${i.type} 수량:${oldQty}→${newQty} 날짜:${i.date}→${newDate} 메모:${i.memo||''}→${newMemo}`);
-
-  i.date=newDate;
-  i.qty=newQty;
-  i.memo=newMemo;
-  if(i.type!=='adjust'){ i.type=newQty>0?'in':'out'; }
-
-  const sameProd = (a,b) => String(a||'').trim() === String(b||'').trim();
-  const isReturnOrder = ord => !!(ord && (ord.isReturn || ord.orderType==='return'));
-  const wantReturn = !!(i.relOrder && orders.find(o=>o.id===i.relOrder && isReturnOrder(o))) || (!!i.relKyOrder && i.type==='in');
-  let relOrd = null;
-
-  if(i.relOrder){
-    relOrd = orders.find(o=>o.id===i.relOrder) || null;
-  }
-  if(!relOrd && i.relKyOrder){
-    const candidates = orders.filter(o =>
-      o.relKyOrder===i.relKyOrder && sameProd(o.relKyProduct||o.product, i.relKyProduct||i.product||o.product)
-    );
-    relOrd = candidates.find(o => wantReturn ? isReturnOrder(o) : !isReturnOrder(o)) || candidates[0] || null;
-    if(relOrd) i.relOrder = relOrd.id;
-  }
-
-  if(relOrd){
-    const absQty = Math.abs(newQty);
-    const signedQty = isReturnOrder(relOrd) ? -absQty : absQty;
-    relOrd.orderDate = newDate;
-    relOrd.qty = signedQty;
-    relOrd.total = (Number(relOrd.price)||0) * signedQty;
-    relOrd.relKyProduct = relOrd.relKyProduct || relOrd.product;
-    i.relKyProduct = i.relKyProduct || relOrd.relKyProduct || relOrd.product;
-    if(relOrd.relKyOrder) i.relKyOrder = i.relKyOrder || relOrd.relKyOrder;
-    if(isReturnOrder(relOrd)){
-      relOrd.isReturn = true;
-      relOrd.orderType = 'return';
-      relOrd.status = 'done';
-      relOrd.dueDate = relOrd.dueDate || '';
-    }else{
-      const dealer = getDealerById(relOrd.dealerId);
-      if(dealer) relOrd.dueDate = calcDue(newDate, dealer.term, relOrd.dealerId);
-    }
-  }
-
-  saveLS();
-  await fbSaveAll();
-
-  const kyRef = i.relKyOrder || relOrd?.relKyOrder || null;
-  const kyProd = i.relKyProduct || relOrd?.relKyProduct || relOrd?.product || i.product;
-  const kyPrice = relOrd ? Math.abs(Number(relOrd.price)||0) : undefined;
-  if(kyRef && kyProd){
-    try{
-      await syncKyOrderLine(kyRef, kyProd, {
-        qty: Math.abs(newQty),
-        price: kyPrice,
-        orderDate: newDate,
-        memo: relOrd ? (relOrd.memo||'') : undefined
-      });
-    }catch(e){ console.warn('KY주문 재고연동 수정 실패:', e); }
-  }
-
-  document.getElementById('editInvModal').remove();
-  notifySuperAdmin(`재고이력 수정: ${i.company||'AMT'} ${i.product} ${i.date} ${i.qty}개`, '재고');
-  toast('재고이력 수정 완료 (발주·수금·대시보드·KY주문 자동 업데이트)','success');
-  refreshAll();
-}
-
-
-async function deleteInvLog(id, isAuto){
-  const i=invLogs.find(x=>x.id===id);
-  if(!i) return;
-  await requireOtp('재고이력 삭제', async () => { await _doDeleteInvLog(id, isAuto); });
-}
-async function _doDeleteInvLog(id, isAuto){
-  const i=invLogs.find(x=>x.id===id);
-  if(!i) return;
-  const autoMsg=isAuto==='true'?'\n⚠️ 발주/내부거래와 연동된 항목입니다. 연동 발주도 함께 삭제됩니다.':'';
-  if(!confirm(`재고이력을 삭제할까요?${autoMsg}\n${i.company||'AMT'} · ${i.product} · ${i.type==='in'?'입고':i.type==='out'?'출고':'조정'} ${i.qty>0?'+':''}${fmt(i.qty)}개`)) return;
-
-  const sameProd = (a,b) => String(a||'').trim() === String(b||'').trim();
-  const isReturnOrder = ord => !!(ord && (ord.isReturn || ord.orderType==='return'));
-  let relOrd = i.relOrder ? (orders.find(o=>o.id===i.relOrder) || null) : null;
-  if(!relOrd && i.relKyOrder){
-    const wantReturn = i.type==='in' || Number(i.qty) > 0;
-    const candidates = orders.filter(o =>
-      o.relKyOrder===i.relKyOrder && sameProd(o.relKyProduct||o.product, i.relKyProduct||i.product||o.product)
-    );
-    relOrd = candidates.find(o => wantReturn ? isReturnOrder(o) : !isReturnOrder(o)) || candidates[0] || null;
-    if(relOrd) i.relOrder = relOrd.id;
-  }
-
-  const relKy = i.relKyOrder || relOrd?.relKyOrder || null;
-  const relKyProduct = i.relKyProduct || relOrd?.relKyProduct || relOrd?.product || i.product;
-
-  addAuditLog('delete','재고',`삭제: ${i.company||'AMT'} ${i.product} ${i.date} ${i.qty>0?'+':''}${i.qty}개 ${i.memo||''}`,i);
-  invLogs = invLogs.filter(x => x.id !== id);
-
-  if(relOrd){
-    addAuditLog('delete','발주',`재고이력삭제로 연동삭제: ${relOrd.dealerName} ${relOrd.product}`,relOrd);
-    orders = orders.filter(o=>o.id!==relOrd.id);
-  }
-
-  saveLS();
-  await fbSaveAll();
-
-  if(relKy && relKyProduct){
-    try{
-      await syncKyOrderLine(relKy, relKyProduct, {
-        deleteLine: true,
-        emptyStatusNote: '[재고이력삭제]'
-      });
-    }catch(e){ console.warn('KY주문 연동취소 실패',e); }
-  }
-
-  notifySuperAdmin(`재고이력 삭제: ${i.company||'AMT'} ${i.product} ${i.date} ${i.qty}개`, '재고');
-  toast('재고이력 삭제 완료 (연동 화면 자동 반영)','info');
-  refreshAll();
-}
-
-
 /* ═══════════════════════════════════════════════════════
    INTERNAL TRADE (AMT → KY)
 ═══════════════════════════════════════════════════════ */
@@ -3902,7 +3688,7 @@ function renderTxList(){
       <span>합계 <b>${fmt(total)}원</b></span>
     </div>
     <div class="table-wrap"><table>
-      <thead><tr><th>날짜</th><th>거래유형</th><th class="td-r">금액</th><th>메모</th><th class="td-c">수정</th><th class="td-c">삭제</th></tr></thead>
+      <thead><tr><th>날짜</th><th>거래유형</th><th class="td-r">금액</th><th>메모</th></tr></thead>
       <tbody>
       ${list.map(t=>{
         const isAdj=t.type.startsWith('adj_');
@@ -5409,36 +5195,6 @@ function clearSyncPassword(){
 }
 
 // 앱 시작 시 저장된 비밀번호로 자동 동기화
-async function autoSyncWithSavedPassword(){
-  const pw = localStorage.getItem(LS_SYNC_PW)||'';
-  if(!pw) return; // 저장된 비밀번호 없으면 스킵
-  const fb = window._fb;
-  if(!fb||!fb.ready) return;
-  try{
-    const key = await hashPassword(pw);
-    const snap = await fb.get(fb.ref(fb.db,'amt_pw/'+key));
-    if(!snap.exists()){
-      // 서버에 데이터 없음 → 이 기기 데이터 업로드
-      await uploadWithKey(key);
-      return;
-    }
-    const remote = snap.val();
-    const remoteTime = remote._updatedAt||'';
-    const localTime  = localStorage.getItem('amt_updatedAt')||'';
-    if(remoteTime > localTime){
-      // 서버가 더 최신 → 가져오기
-      _applyPwRemote(remote);
-      refreshAll();
-      const t = new Date(remoteTime).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
-      toast('📱 비밀번호 동기화: 최신 데이터 적용 ('+t+')','info');
-    } else {
-      // 로컬이 최신 또는 동일 → 업로드
-      await uploadWithKey(key);
-    }
-  }catch(e){ console.warn('비밀번호 자동동기화 실패:',e); }
-}
-
-// 비밀번호 키로 서버에 업로드
 async function uploadWithKey(key){
   const fb = window._fb;
   if(!fb||!fb.ready) return;
@@ -6072,45 +5828,13 @@ function kyAdminRefresh(){
   }).catch(e=>toast('실패: '+e.message,'error'));
 }
 
-function kyUpdateKpi(list){
-  const mo = ym(today());
-  // ★ 취소된 주문 제외
-  const active = list.filter(o => o.status !== 'cancelled');
-  document.getElementById('kyKpiTotal').textContent = fmt(active.length);
-  document.getElementById('kyKpiPending').textContent = fmt(active.filter(o=>o.status==='pending').length);
-  document.getElementById('kyKpiAccepted').textContent = fmt(active.filter(o=>o.status==='accepted').length);
-  const moAmt = active.filter(o=>o.orderDate&&o.orderDate.startsWith(mo)).reduce((s,o)=>s+(o.total||0),0);
-  document.getElementById('kyKpiAmt').textContent = fmt(moAmt);
-}
+function kyUpdateKpi(list){ /* KPI 패널 제거됨 */ }
 
-function kyUpdateDealerFilter(){
-  const sel = document.getElementById('kyFDealer');
-  const cur = sel.value;
-  const dealers = [...new Set(kyAllOrders.map(o=>o.dealerName))].sort();
-  sel.innerHTML = '<option value="">전체 대리점</option>' +
-    dealers.map(d=>`<option value="${d}" ${d===cur?'selected':''}>${d}</option>`).join('');
-}
+function kyUpdateDealerFilter(){ /* 필터 제거됨 */ }
 
-function kyApplyFilter(){
-  const status = document.getElementById('kyFStatus').value;
-  const dealer = document.getElementById('kyFDealer').value;
-  const from = document.getElementById('kyFFrom').value;
-  const to = document.getElementById('kyFTo').value;
-  // ★ 취소된 주문은 기본적으로 제외
-  let list = kyAllOrders.filter(o => o.status !== 'cancelled');
-  if(status) list = list.filter(o=>o.status===status);
-  if(dealer) list = list.filter(o=>o.dealerName===dealer);
-  if(from) list = list.filter(o=>o.orderDate>=from);
-  if(to) list = list.filter(o=>o.orderDate<=to);
-  kyFilteredOrders = list;
-  kyRenderOrders(list);
-  document.getElementById('kyOrderCount').textContent = list.length+'건';
-}
+function kyApplyFilter(){ kyRenderOrders(kyAllOrders); }
 
-function kyResetFilter(){
-  ['kyFStatus','kyFDealer','kyFFrom','kyFTo'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
-  kyApplyFilter();
-}
+function kyResetFilter(){ kyApplyFilter(); }
 
 
 function calcKyOrderItemBaseTotal(order){
@@ -6221,107 +5945,6 @@ function applyLocalKyOrderRemoval(orderId){
   }
 }
 
-async function syncKyOrderLine(relKyOrderId, product, options={}){
-  const fb = window._fb;
-  if(!relKyOrderId || !product || !fb || !fb.ready) return false;
-
-  const snap = await fb.get(fb.ref(fb.db,'ky_orders/'+relKyOrderId));
-  if(!snap.exists()) return false;
-
-  const kyOrder = snap.val();
-  const now = new Date().toISOString();
-  const oldItems = normalizeKyOrderItems(kyOrder.items||[]);
-  const productKey = normalizeKyProductKey(product);
-  const linkedAmtOrderId = options.relAmtOrder || kyOrder.relAmtOrder || null;
-  const canFallbackSingleLine = !!(linkedAmtOrderId && (kyOrder.fromAmt || kyOrder.relAmtOrder===linkedAmtOrderId) && oldItems.length===1);
-  const match = item => {
-    const sameProduct = normalizeKyProductKey(item.product) === productKey;
-    const sameLinkedOrder = !!(linkedAmtOrderId && (item.relAmtOrder===linkedAmtOrderId || kyOrder.relAmtOrder===linkedAmtOrderId));
-    return sameProduct || sameLinkedOrder;
-  };
-
-  let nextItems;
-
-  if(options.deleteLine){
-    nextItems = oldItems.filter(item => !match(item));
-  } else {
-    let touched = false;
-    nextItems = oldItems.map(item => {
-      if(!match(item)) return item;
-      touched = true;
-      const qty = Math.abs(Number(options.qty ?? item.qty) || 0);
-      const price = Number(options.price ?? item.price) || 0;
-      return {
-        ...item,
-        product: item.product || product,
-        qty,
-        price,
-        total: qty * price,
-        relAmtOrder: linkedAmtOrderId || item.relAmtOrder || null,
-        relKyProduct: item.relKyProduct || item.product || product,
-        source: item.source || (kyOrder.fromAmt ? 'amt_order' : 'linked_order')
-      };
-    });
-
-    if(!touched && canFallbackSingleLine && Number(options.qty) > 0){
-      const base = oldItems[0] || {};
-      const qty = Math.abs(Number(options.qty) || 0);
-      const price = Number(options.price ?? base.price) || 0;
-      nextItems = [{
-        ...base,
-        product: base.product || product,
-        qty,
-        price,
-        total: qty * price,
-        relAmtOrder: linkedAmtOrderId || base.relAmtOrder || null,
-        relKyProduct: base.relKyProduct || base.product || product,
-        source: base.source || 'amt_order'
-      }];
-      touched = true;
-    }
-
-    if(!touched && Number(options.qty) > 0){
-      const qty = Math.abs(Number(options.qty) || 0);
-      const price = Number(options.price) || 0;
-      nextItems.push({
-        product,
-        qty,
-        price,
-        total: qty * price,
-        relAmtOrder: linkedAmtOrderId,
-        relKyProduct: product,
-        source: kyOrder.fromAmt ? 'amt_order' : 'linked_order'
-      });
-    }
-  }
-
-  nextItems = normalizeKyOrderItems(nextItems);
-  const extraAmount = calcKyOrderExtraAmount(kyOrder);
-  const itemTotal = nextItems.reduce((s,i)=>s+(Number(i.total)||0),0);
-  const nextPayload = {
-    ...kyOrder,
-    relAmtOrder: linkedAmtOrderId,
-    items: nextItems,
-    total: nextItems.length ? itemTotal + extraAmount : 0,
-    totalQty: nextItems.reduce((s,i)=>s+(Number(i.qty)||0),0),
-    statusUpdatedAt: now,
-    updatedAt: now
-  };
-
-  if(options.orderDate) nextPayload.orderDate = options.orderDate;
-  if(typeof options.memo === 'string') nextPayload.memo = options.memo;
-
-  if(!nextItems.length){
-    nextPayload.status = 'cancelled';
-    nextPayload.statusNote = options.emptyStatusNote || '[연동항목삭제]';
-  }
-
-  await fb.set(fb.ref(fb.db,'ky_orders/'+relKyOrderId), nextPayload);
-  await markKyMutation(options.deleteLine ? 'delete_line' : 'edit_line', relKyOrderId, { product, dealerId: kyOrder.dealerId || '' });
-  applyLocalKyOrderPatch(nextPayload);
-  return true;
-}
-
 const kyStatusMap = {
   pending:  {label:'대기중',cls:'pending'},
   accepted: {label:'접수완료',cls:'accepted'},
@@ -6363,21 +5986,10 @@ function kyRenderOrders(list){
       ${o.memo?`<div style="font-size:.78rem;color:var(--text2);background:var(--surface2);border-radius:6px;padding:7px 10px;margin-bottom:10px;border-left:3px solid #fde68a">💬 ${o.memo}</div>`:''}
       ${o.statusNote?`<div style="font-size:.78rem;color:var(--text2);background:var(--surface2);border-radius:6px;padding:7px 10px;margin-bottom:10px;border-left:3px solid var(--yellow)">📝 관리자메모: ${o.statusNote}${o.processedBy?` (${o.processedBy})`:''}</div>`:''}
       <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding-top:10px;border-top:1px solid var(--border)">
-        ${o.status==='pending'?`
-          <button class="btn btn-success" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','accepted')">✅ 접수</button>
-          ${o.orderType==='return'?
-            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem;color:#16a34a;border-color:#16a34a" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
-            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고</button>`
-          }
-        `:o.status==='accepted'?`
-          ${o.orderType==='return'?
-            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem;color:#16a34a;border-color:#16a34a" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
-            `<button class="btn btn-outline" style="padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','shipped')">🚚 출고처리</button>`
-          }
-          <button class="btn btn-ghost btn-sm" onclick="kyOpenAction('${o.id}','pending')">↩ 대기로</button>
-        `:o.status==='shipped'||o.status==='received'?`
-          <button class="btn btn-ghost btn-sm" onclick="kyOpenAction('${o.id}','accepted')">↩ 접수로</button>
-        `:''}
+        ${(o.status==='pending'||o.status==='accepted')?(o.orderType==='return'?
+            `<button class="btn btn-sm" style="background:#16a34a;color:#fff;border-color:#16a34a;padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
+            `<button class="btn btn-sm" style="background:#2563eb;color:#fff;border-color:#2563eb;padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','shipped')">🚚 ${o.orderType==='exchange'?'교환처리':'출고'}</button>`
+          ):o.status==='shipped'||o.status==='received'?`<span style="font-size:.75rem;color:#16a34a;font-weight:700">✅ 출고완료</span>`:''}
         <span style="margin-left:auto;font-family:monospace;font-size:.9rem;font-weight:800;color:var(--yellow)">${fmt(o.total)}원</span>
         ${isSuperAdmin() ? `<button onclick="kyDeleteOrder('${o.id}')" style="margin-left:8px;background:none;border:1px solid #fca5a5;color:#ef4444;border-radius:6px;padding:4px 10px;font-size:.72rem;cursor:pointer">🗑 삭제</button>` : ''}
       </div>
@@ -6502,6 +6114,14 @@ async function kyConfirmAction(orderId, targetStatus){
 
     toast('✅ '+o.dealerName+' → '+(lbl[targetStatus]||targetStatus),'success');
     kyCloseDetail();
+
+    // ★ 출고/반품입고 완료 후 KY주문관리에서 항목 삭제 (발주내역에서 확인)
+    if(targetStatus === 'shipped' || targetStatus === 'received'){
+      try{
+        await fb.set(fb.ref(fb.db,'ky_orders/'+orderId), null);
+        applyLocalKyOrderRemoval(orderId);
+      }catch(e2){ console.warn('KY주문 삭제 실패(출고 후):', e2); }
+    }
   }catch(e){ toast('❌ 처리 실패: '+e.message,'error'); }
 }
 
@@ -7597,7 +7217,7 @@ window.addEventListener('DOMContentLoaded',()=>{
 // PWA Service Worker 등록 (github.io 배포 환경에서만)
 if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/AMT/sw.js?v=20260416-fix1')
+    navigator.serviceWorker.register('/AMT/sw.js?v=20260417-v2')
       .then(r=>console.log('[AMT SW] 등록 완료:', r.scope))
       .catch(e=>console.log('[AMT SW] 등록 스킵:', e.message));
   });
