@@ -1309,12 +1309,7 @@ tbody td{padding:9px 12px;vertical-align:middle;font-weight:600;}
       ⚠️ Firebase 미연결 — 설정 탭에서 Firebase 정보를 입력·저장하고 새로고침하세요.
     </div>
 
-      <span id="kyOrderCount" style="font-size:.8rem;color:var(--text3)"></span>
-    </div>
-
-    <div id="kyOrdersList">
-      <div class="empty"><div class="empty-icon">⏳</div><p>불러오는 중...</p></div>
-    </div>
+    <div id="kyOrdersList" style="display:none"></div>
   </div>
 </div>
 
@@ -5674,8 +5669,6 @@ function initKyAdmin(){
   if(!fb || !fb.ready){
     document.getElementById('kyAdminFbWarn').style.display = 'block';
     kySetSync(false, '미연결');
-    document.getElementById('kyOrdersList').innerHTML =
-      '<div class="empty"><div class="empty-icon">⚠️</div><p>Firebase 미연결</p></div>';
     return;
   }
   kySetSync(true, '연결됨');
@@ -5953,49 +5946,7 @@ const kyStatusMap = {
   cancelled:{label:'취소됨',cls:'rejected'}
 };
 
-function kyRenderOrders(list){
-  const el = document.getElementById('kyOrdersList');
-  // ★ 취소된 주문 숨김
-  const visible = list.filter(o => o.status !== 'cancelled');
-  if(!visible.length){
-    el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><p>주문이 없습니다</p></div>';
-    return;
-  }
-  const statusColors = {pending:'#d97706',accepted:'#16a34a',shipped:'#2563eb',received:'#16a34a',cancelled:'#9ca3af'};
-  const statusBg    = {pending:'#fffbeb',accepted:'#f0fdf4',shipped:'#eff6ff',received:'#f0fdf4',cancelled:'#f3f4f6'};
-  el.innerHTML = visible.map(o => {
-    const s = kyStatusMap[o.status]||{label:o.status,cls:'pending'};
-    const isNew = o.status==='pending';
-    const sc = statusColors[o.status]||'#888';
-    const sb = statusBg[o.status]||'#f3f4f6';
-    const chips = (o.items||[]).map(i=>
-      `<span style="background:var(--ky-bg,#fffbeb);border:1px solid #fde68a;border-radius:8px;padding:4px 10px;font-size:.75rem;font-weight:700;color:#b45309">📦 ${i.product} ${fmt(i.qty)}개 · ${fmt(i.total)}원</span>`
-    ).join('');
-    const ct = o.createdAt ? new Date(o.createdAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
-    const typeTag = o.orderType && o.orderType !== 'order'
-      ? `<span style="margin-left:6px;font-size:.62rem;padding:1px 6px;border-radius:8px;font-weight:700;background:${o.orderType==='return'?'#fef3c7':'#eff6ff'};color:${o.orderType==='return'?'#92400e':'#1e40af'}">${o.orderType==='return'?'반품':'교환'}</span>` : '';
-    return `<div style="background:#fff;border:${isNew?'1.5px solid var(--yellow)':'1px solid var(--border)'};${isNew?'border-left:4px solid var(--yellow)':''};border-radius:10px;padding:16px;margin-bottom:10px;box-shadow:var(--shadow-sm)">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
-        <div>
-          <div style="font-size:.95rem;font-weight:700">${o.dealerName}${isNew?'<span style="margin-left:8px;background:#ef4444;color:#fff;padding:2px 6px;border-radius:8px;font-size:.58rem">NEW</span>':''}${typeTag}</div>
-          <div style="font-size:.7rem;color:var(--text3);font-family:monospace;margin-top:2px">${o.id||''} · ${o.orderDate||''} ${ct}</div>
-        </div>
-        <span style="background:${sb};color:${sc};padding:3px 10px;border-radius:20px;font-size:.68rem;font-weight:700">${s.label}</span>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">${chips}</div>
-      ${o.memo?`<div style="font-size:.78rem;color:var(--text2);background:var(--surface2);border-radius:6px;padding:7px 10px;margin-bottom:10px;border-left:3px solid #fde68a">💬 ${o.memo}</div>`:''}
-      ${o.statusNote?`<div style="font-size:.78rem;color:var(--text2);background:var(--surface2);border-radius:6px;padding:7px 10px;margin-bottom:10px;border-left:3px solid var(--yellow)">📝 관리자메모: ${o.statusNote}${o.processedBy?` (${o.processedBy})`:''}</div>`:''}
-      <div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding-top:10px;border-top:1px solid var(--border)">
-        ${(o.status==='pending'||o.status==='accepted')?(o.orderType==='return'?
-            `<button class="btn btn-sm" style="background:#16a34a;color:#fff;border-color:#16a34a;padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','received')">📥 입고처리</button>` :
-            `<button class="btn btn-sm" style="background:#2563eb;color:#fff;border-color:#2563eb;padding:8px 18px;font-size:.88rem" onclick="kyOpenAction('${o.id}','shipped')">🚚 ${o.orderType==='exchange'?'교환처리':'출고'}</button>`
-          ):o.status==='shipped'||o.status==='received'?`<span style="font-size:.75rem;color:#16a34a;font-weight:700">✅ 출고완료</span>`:''}
-        <span style="margin-left:auto;font-family:monospace;font-size:.9rem;font-weight:800;color:var(--yellow)">${fmt(o.total)}원</span>
-        ${isSuperAdmin() ? `<button onclick="kyDeleteOrder('${o.id}')" style="margin-left:8px;background:none;border:1px solid #fca5a5;color:#ef4444;border-radius:6px;padding:4px 10px;font-size:.72rem;cursor:pointer">🗑 삭제</button>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-}
+function kyRenderOrders(list){ /* 목록 제거됨 — 팝업으로만 처리 */ }
 
 async function kyDeleteOrder(orderId){
   if(!confirm('이 주문을 KY주문관리에서 삭제할까요?\n(연동된 발주/재고이력도 함께 정리됩니다)')) return;
@@ -7217,7 +7168,7 @@ window.addEventListener('DOMContentLoaded',()=>{
 // PWA Service Worker 등록 (github.io 배포 환경에서만)
 if('serviceWorker' in navigator && location.hostname.endsWith('github.io')){
   window.addEventListener('load',()=>{
-    navigator.serviceWorker.register('/AMT/sw.js?v=20260417-v2')
+    navigator.serviceWorker.register('/AMT/sw.js?v=20260418-v1')
       .then(r=>console.log('[AMT SW] 등록 완료:', r.scope))
       .catch(e=>console.log('[AMT SW] 등록 스킵:', e.message));
   });
